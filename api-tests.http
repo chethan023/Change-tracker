@@ -1,0 +1,394 @@
+### Change Tracker — API Test File
+### Use with VS Code "REST Client" extension (humao.rest-client)
+### or JetBrains HTTP Client
+
+@baseUrl = http://localhost:8000
+@apiKey = local-test-key-123
+@contentType = application/xml
+
+# ──────────────────────────────────────────────
+# 1. HEALTH CHECK
+# ──────────────────────────────────────────────
+
+### Health check
+GET {{baseUrl}}/api/v1/health
+
+
+# ──────────────────────────────────────────────
+# 2. AUTHENTICATION
+# ──────────────────────────────────────────────
+
+### Login — get JWT token
+# Copy the access_token from the response and paste it into @token below
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@local.dev",
+  "password": "admin123"
+}
+
+### Set token after running the login request above
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZW1haWwiOiJhZG1pbkBsb2NhbC5kZXYiLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3NzY2MjA0ODB9.M7J9pAFvVWCuZQtu5b_95ombeGiBPrX0J3kF81bqSHA
+
+
+# ──────────────────────────────────────────────
+# 3. INGEST — send STEPXML payload
+# ──────────────────────────────────────────────
+
+### Ingest: send the bundled sample STEPXML file
+# Requires the sample_stepxml_payload.xml file in the same folder as this file
+POST {{baseUrl}}/api/v1/ingest
+X-API-Key: {{apiKey}}
+Content-Type: {{contentType}}
+
+< ./sample_stepxml_payload.xml
+
+### Ingest: send a minimal inline STEPXML (single product, one attribute change)
+POST {{baseUrl}}/api/v1/ingest
+X-API-Key: {{apiKey}}
+Content-Type: {{contentType}}
+
+<?xml version="1.0" encoding="UTF-8"?>
+<STEP-ProductInformation
+    xmlns="http://www.stibosystems.com/step"
+    ContextID="GlobalContext"
+    UseContextLocale="false">
+  <Products>
+    <Product ID="TEST-PRODUCT-001" ParentID="ProductFolder" UserTypeID="BaseProduct">
+      <Name>Test Product One</Name>
+      <Values>
+        <Value AttributeID="ProductDescription" Changed="true">Updated description text</Value>
+        <Value AttributeID="ProductColor" Changed="true">Blue</Value>
+      </Values>
+    </Product>
+  </Products>
+</STEP-ProductInformation>
+
+### Ingest: missing API key — expect 401
+POST {{baseUrl}}/api/v1/ingest
+Content-Type: {{contentType}}
+
+<?xml version="1.0" encoding="UTF-8"?>
+<STEP-ProductInformation xmlns="http://www.stibosystems.com/step" ContextID="GlobalContext" UseContextLocale="false">
+  <Products/>
+</STEP-ProductInformation>
+
+### Ingest: wrong API key — expect 401
+POST {{baseUrl}}/api/v1/ingest
+X-API-Key: wrong-key
+Content-Type: {{contentType}}
+
+<?xml version="1.0" encoding="UTF-8"?>
+<STEP-ProductInformation xmlns="http://www.stibosystems.com/step" ContextID="GlobalContext" UseContextLocale="false">
+  <Products/>
+</STEP-ProductInformation>
+
+### Ingest: empty body — expect 400
+POST {{baseUrl}}/api/v1/ingest
+X-API-Key: {{apiKey}}
+Content-Type: {{contentType}}
+
+
+# ──────────────────────────────────────────────
+# 4. CHANGES — query audit log (requires token)
+# ──────────────────────────────────────────────
+
+### List all changes (first page)
+GET {{baseUrl}}/api/v1/changes?page=1&page_size=20
+Authorization: Bearer {{token}}
+
+### Filter by change type
+GET {{baseUrl}}/api/v1/changes?change_element_type=ATTRIBUTE_VALUE&page=1&page_size=20
+Authorization: Bearer {{token}}
+
+### Filter by product ID
+GET {{baseUrl}}/api/v1/changes?step_product_id=TEST-PRODUCT-001&page=1&page_size=20
+Authorization: Bearer {{token}}
+
+### Export changes as CSV
+GET {{baseUrl}}/api/v1/export/csv
+Authorization: Bearer {{token}}
+
+### Available filter options (for dropdowns)
+GET {{baseUrl}}/api/v1/filters/options
+Authorization: Bearer {{token}}
+
+
+# ──────────────────────────────────────────────
+# 5. SNAPSHOTS — ingest history
+# ──────────────────────────────────────────────
+
+### List all snapshots
+GET {{baseUrl}}/api/v1/snapshots?page=1&page_size=20
+Authorization: Bearer {{token}}
+
+
+# ──────────────────────────────────────────────
+# 6. PRODUCTS
+# ──────────────────────────────────────────────
+
+### List all tracked products
+GET {{baseUrl}}/api/v1/products?page=1&page_size=20
+Authorization: Bearer {{token}}
+
+
+# ──────────────────────────────────────────────
+# 7. USERS (admin only)
+# ──────────────────────────────────────────────
+
+### List users
+GET {{baseUrl}}/api/v1/users
+Authorization: Bearer {{token}}
+
+### Create a new user
+POST {{baseUrl}}/api/v1/users
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "email": "viewer@example.com",
+  "password": "password123",
+  "role": "viewer"
+}
+
+### Get current user profile
+GET {{baseUrl}}/api/v1/users/me
+Authorization: Bearer {{token}}
+
+
+# ──────────────────────────────────────────────
+# 8. NOTIFICATIONS
+# ──────────────────────────────────────────────
+
+### List notification rules
+GET {{baseUrl}}/api/v1/notifications
+Authorization: Bearer {{token}}
+
+### Create a notification rule (email on any attribute change)
+POST {{baseUrl}}/api/v1/notifications
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "rule_name": "All attribute changes",
+  "change_element_type": "ATTRIBUTE_VALUE",
+  "notify_channel": "email",
+  "notify_target": "admin@local.dev"
+}
+
+### Delete a notification rule (replace 1 with actual rule ID)
+DELETE {{baseUrl}}/api/v1/notifications/1
+Authorization: Bearer {{token}}
+
+
+# ──────────────────────────────────────────────
+# 9. CLIENT CONFIG
+# ──────────────────────────────────────────────
+
+### Get client branding / config
+GET {{baseUrl}}/api/v1/config
+Authorization: Bearer {{token}}
+
+
+# ──────────────────────────────────────────────
+# 10. DIMENSION-DEPENDENT ATTRIBUTE TESTS
+#
+# A single attribute can have a distinct value
+# per qualifier (locale, market context, unit).
+# The composite key is:
+#   (product_id, attribute_id, qualifier_id, unit_id)
+#
+# Test sequence:
+#   10a — Baseline ingest: establish values for
+#          N qualifiers across three dimension types:
+#            • locale  (en / de / fr / cs / pl / nl)
+#            • market  (CZ10 / DE-A1 / FR-B1 / PL-E)
+#            • unit    (EUR / GBP / USD)
+#   10b — Partial update: change ONLY en + de locales,
+#          CZ10 market value, and USD price.
+#          Unchanged qualifiers must NOT appear in
+#          the change log.
+#   10c — Add a new qualifier (ja locale) while
+#          leaving all existing qualifiers untouched.
+#   10d — Send the same payload as 10c again (no-op).
+#          Expect zero new ChangeRecords.
+#   10e — Filter /changes by qualifier_id to confirm
+#          only the expected qualifiers were recorded.
+# ──────────────────────────────────────────────
+
+### 10a — Baseline: DIM-PRODUCT-001 with full qualifier set
+POST {{baseUrl}}/api/v1/ingest
+X-API-Key: {{apiKey}}
+Content-Type: application/xml
+
+<?xml version="1.0" encoding="UTF-8"?>
+<STEP-ProductInformation
+    xmlns="http://www.stibosystems.com/step"
+    ContextID="GlobalContext"
+    UseContextLocale="false">
+  <Products>
+    <Product ID="DIM-PRODUCT-001" ParentID="TestFolder" UserTypeID="BaseProduct" Changed="true">
+
+      <!-- ── Locale dimension (6 qualifiers) ── -->
+      <Values>
+        <Value AttributeID="MarketingDescription" QualifierID="en" Changed="true">Fire-rated wall panel, mineral wool core.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="de" Changed="true">Brandschutzwandpaneel mit Mineralwollkern.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="fr" Changed="true">Panneau mural coupe-feu, âme en laine minérale.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="cs" Changed="true">Požárně odolný stěnový panel s jádrem z minerální vlny.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="pl" Changed="true">Ognioodporny panel ścienny z rdzeniem z wełny mineralnej.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="nl" Changed="true">Brandwerend wandpaneel met mineraalwolkern.</Value>
+
+        <!-- ── Market/context dimension (4 qualifiers) ── -->
+        <Value AttributeID="FireResistanceClass" QualifierID="CZ10" Changed="true">EI 60 (o-i)</Value>
+        <Value AttributeID="FireResistanceClass" QualifierID="DE-A1" Changed="true">F 60-AB</Value>
+        <Value AttributeID="FireResistanceClass" QualifierID="FR-B1" Changed="true">M0-60min</Value>
+        <Value AttributeID="FireResistanceClass" QualifierID="PL-E"  Changed="true">REI 60</Value>
+
+        <!-- ── Unit dimension (3 currency qualifiers) ── -->
+        <Value AttributeID="ListPrice" QualifierID="EUR" UnitID="EUR" Changed="true">245.00</Value>
+        <Value AttributeID="ListPrice" QualifierID="GBP" UnitID="GBP" Changed="true">210.00</Value>
+        <Value AttributeID="ListPrice" QualifierID="USD" UnitID="USD" Changed="true">268.00</Value>
+      </Values>
+    </Product>
+  </Products>
+</STEP-ProductInformation>
+
+
+### 10b — Partial update: change en + de + CZ10 + USD only
+# Expected: 4 ChangeRecords created.
+# Unchanged qualifiers (fr / cs / pl / nl / DE-A1 / FR-B1 / PL-E / EUR / GBP)
+# must produce zero ChangeRecords.
+POST {{baseUrl}}/api/v1/ingest
+X-API-Key: {{apiKey}}
+Content-Type: application/xml
+
+<?xml version="1.0" encoding="UTF-8"?>
+<STEP-ProductInformation
+    xmlns="http://www.stibosystems.com/step"
+    ContextID="GlobalContext"
+    UseContextLocale="false">
+  <Products>
+    <Product ID="DIM-PRODUCT-001" ParentID="TestFolder" UserTypeID="BaseProduct" Changed="true">
+      <Values>
+        <!-- Changed qualifiers -->
+        <Value AttributeID="MarketingDescription" QualifierID="en" Changed="true">Fire-rated wall panel, mineral wool core. REVISED.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="de" Changed="true">Brandschutzwandpaneel mit Mineralwollkern. ÜBERARBEITET.</Value>
+
+        <!-- Unchanged qualifiers — identical values, no change expected -->
+        <Value AttributeID="MarketingDescription" QualifierID="fr">Panneau mural coupe-feu, âme en laine minérale.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="cs">Požárně odolný stěnový panel s jádrem z minerální vlny.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="pl">Ognioodporný panel ścienny z rdzeniem z wełny mineralnej.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="nl">Brandwerend wandpaneel met mineraalwolkern.</Value>
+
+        <!-- Changed market context -->
+        <Value AttributeID="FireResistanceClass" QualifierID="CZ10" Changed="true">EI 90 (o-i)</Value>
+
+        <!-- Unchanged market contexts -->
+        <Value AttributeID="FireResistanceClass" QualifierID="DE-A1">F 60-AB</Value>
+        <Value AttributeID="FireResistanceClass" QualifierID="FR-B1">M0-60min</Value>
+        <Value AttributeID="FireResistanceClass" QualifierID="PL-E">REI 60</Value>
+
+        <!-- Changed unit qualifier -->
+        <Value AttributeID="ListPrice" QualifierID="USD" UnitID="USD" Changed="true">275.00</Value>
+
+        <!-- Unchanged unit qualifiers -->
+        <Value AttributeID="ListPrice" QualifierID="EUR" UnitID="EUR">245.00</Value>
+        <Value AttributeID="ListPrice" QualifierID="GBP" UnitID="GBP">210.00</Value>
+      </Values>
+    </Product>
+  </Products>
+</STEP-ProductInformation>
+
+
+### 10c — Add new locale qualifier (ja) — existing qualifiers untouched
+# Expected: exactly 1 new ChangeRecord (new ja value, no previous).
+POST {{baseUrl}}/api/v1/ingest
+X-API-Key: {{apiKey}}
+Content-Type: application/xml
+
+<?xml version="1.0" encoding="UTF-8"?>
+<STEP-ProductInformation
+    xmlns="http://www.stibosystems.com/step"
+    ContextID="GlobalContext"
+    UseContextLocale="false">
+  <Products>
+    <Product ID="DIM-PRODUCT-001" ParentID="TestFolder" UserTypeID="BaseProduct" Changed="true">
+      <Values>
+        <!-- Brand-new qualifier never seen before -->
+        <Value AttributeID="MarketingDescription" QualifierID="ja" Changed="true">耐火壁パネル、ミネラルウールコア。</Value>
+
+        <!-- All existing qualifiers sent with same value — no change expected -->
+        <Value AttributeID="MarketingDescription" QualifierID="en">Fire-rated wall panel, mineral wool core. REVISED.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="de">Brandschutzwandpaneel mit Mineralwollkern. ÜBERARBEITET.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="fr">Panneau mural coupe-feu, âme en laine minérale.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="cs">Požárně odolný stěnový panel s jádrem z minerální vlny.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="pl">Ognioodporný panel ścienny z rdzeniem z wełny mineralnej.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="nl">Brandwerend wandpaneel met mineraalwolkern.</Value>
+        <Value AttributeID="FireResistanceClass" QualifierID="CZ10">EI 90 (o-i)</Value>
+        <Value AttributeID="FireResistanceClass" QualifierID="DE-A1">F 60-AB</Value>
+        <Value AttributeID="FireResistanceClass" QualifierID="FR-B1">M0-60min</Value>
+        <Value AttributeID="FireResistanceClass" QualifierID="PL-E">REI 60</Value>
+        <Value AttributeID="ListPrice" QualifierID="EUR" UnitID="EUR">245.00</Value>
+        <Value AttributeID="ListPrice" QualifierID="GBP" UnitID="GBP">210.00</Value>
+        <Value AttributeID="ListPrice" QualifierID="USD" UnitID="USD">275.00</Value>
+      </Values>
+    </Product>
+  </Products>
+</STEP-ProductInformation>
+
+
+### 10d — No-op: exact repeat of 10c — expect zero new ChangeRecords
+POST {{baseUrl}}/api/v1/ingest
+X-API-Key: {{apiKey}}
+Content-Type: application/xml
+
+<?xml version="1.0" encoding="UTF-8"?>
+<STEP-ProductInformation
+    xmlns="http://www.stibosystems.com/step"
+    ContextID="GlobalContext"
+    UseContextLocale="false">
+  <Products>
+    <Product ID="DIM-PRODUCT-001" ParentID="TestFolder" UserTypeID="BaseProduct" Changed="true">
+      <Values>
+        <Value AttributeID="MarketingDescription" QualifierID="en">Fire-rated wall panel, mineral wool core. REVISED.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="de">Brandschutzwandpaneel mit Mineralwollkern. ÜBERARBEITET.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="fr">Panneau mural coupe-feu, âme en laine minérale.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="cs">Požárně odolný stěnový panel s jádrem z minerální vlny.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="pl">Ognioodporný panel ścienny z rdzeniem z wełny mineralnej.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="nl">Brandwerend wandpaneel met mineraalwolkern.</Value>
+        <Value AttributeID="MarketingDescription" QualifierID="ja">耐火壁パネル、ミネラルウールコア。</Value>
+        <Value AttributeID="FireResistanceClass" QualifierID="CZ10">EI 90 (o-i)</Value>
+        <Value AttributeID="FireResistanceClass" QualifierID="DE-A1">F 60-AB</Value>
+        <Value AttributeID="FireResistanceClass" QualifierID="FR-B1">M0-60min</Value>
+        <Value AttributeID="FireResistanceClass" QualifierID="PL-E">REI 60</Value>
+        <Value AttributeID="ListPrice" QualifierID="EUR" UnitID="EUR">245.00</Value>
+        <Value AttributeID="ListPrice" QualifierID="GBP" UnitID="GBP">210.00</Value>
+        <Value AttributeID="ListPrice" QualifierID="USD" UnitID="USD">275.00</Value>
+      </Values>
+    </Product>
+  </Products>
+</STEP-ProductInformation>
+
+
+### 10e — Verify: list changes for DIM-PRODUCT-001 and assert qualifier breakdown
+# Run after 10a–10d.  Expected change log:
+#   From 10a (baseline): 13 records  — all qualifiers as new values
+#   From 10b (partial):   4 records  — en, de, CZ10, USD only
+#   From 10c (new ja):    1 record   — ja only
+#   From 10d (no-op):     0 records
+# Total: 18 ChangeRecords for DIM-PRODUCT-001
+GET {{baseUrl}}/api/v1/changes?step_product_id=DIM-PRODUCT-001&page=1&page_size=50
+Authorization: Bearer {{token}}
+
+### 10e-i — Filter to only locale-dimension changes (MarketingDescription)
+GET {{baseUrl}}/api/v1/changes?step_product_id=DIM-PRODUCT-001&attribute_id=MarketingDescription&page=1&page_size=50
+Authorization: Bearer {{token}}
+
+### 10e-ii — Filter to a single qualifier (CZ10 market context)
+GET {{baseUrl}}/api/v1/changes?step_product_id=DIM-PRODUCT-001&qualifier_id=CZ10&page=1&page_size=50
+Authorization: Bearer {{token}}
+
+### 10e-iii — Filter to unit dimension changes (ListPrice)
+GET {{baseUrl}}/api/v1/changes?step_product_id=DIM-PRODUCT-001&attribute_id=ListPrice&page=1&page_size=50
+Authorization: Bearer {{token}}

@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STEP-ProductInformation
+    xmlns="http://www.stibosystems.com/step"
+    ContextID="GlobalContext"
+    UseContextLocale="false">
+
+    <!--
+    ====================================================================
+    SAMPLE STEPXML — Validated against the official STIBO STEP PIM.xsd
+    ====================================================================
+    Generic, client-neutral sample covering every change type the
+    Change Tracker handles:
+
+      1. Attribute value changes   (Values / Value / MultiValue)
+      2. Multi-language product names (Name with QualifierID)
+      3. Product cross-references  (ProductCrossReference + Delete)
+      4. Asset cross-references    (AssetCrossReference + Delete)
+      5. Classification refs       (ClassificationReference + Delete)
+      6. Data containers           (DataContainers + nested Values)
+      7. Product reclassification  (ParentID change vs DB)
+      8. Product deletion          (DeleteProducts at root)
+    ====================================================================
+    -->
+
+    <DeleteProducts>
+        <DeleteProduct ID="PROD-DISCONTINUED-999"/>
+    </DeleteProducts>
+
+    <Products>
+
+        <!-- PRODUCT 1: Wall panel with a variety of change types -->
+        <Product ID="PROD-WALL-PANEL-1000"
+                 ParentID="WALL-PANEL-FAMILY"
+                 UserTypeID="WallPanel"
+                 Changed="true">
+
+            <Name QualifierID="en" Changed="true">Fire-rated Wall Panel</Name>
+            <Name QualifierID="de">Brandschutzwandpaneel</Name>
+            <Name QualifierID="fr">Panneau mural ignifuge</Name>
+
+            <Values>
+                <Value AttributeID="STEP_LastModifiedDate">2024-04-01T10:30:00Z</Value>
+                <Value AttributeID="STEP_LastModifiedByUserID">editor.one</Value>
+
+                <Value AttributeID="FireResistance"
+                       QualifierID="en"
+                       Changed="true">E 60 / EI 60 / EW 60</Value>
+
+                <Value AttributeID="ModuleWidth" UnitID="mm">1000</Value>
+                <Value AttributeID="Thickness"   UnitID="mm" Changed="true">100</Value>
+                <Value AttributeID="CoreType"    ID="MLA">MLA</Value>
+
+                <MultiValue AttributeID="ApplicableCertifications" Changed="true">
+                    <Value>CE</Value>
+                    <Value>DoP-2024-001</Value>
+                    <Value>EN-13501-1</Value>
+                </MultiValue>
+
+                <Value AttributeID="MarketingDescription" QualifierID="en" Changed="true">Fire-rated wall panel with mineral wool core, suitable for external wall applications.</Value>
+            </Values>
+
+            <ProductCrossReference Type="RelatedAccessory"
+                                   ProductID="PROD-ACCESSORY-001"
+                                   Changed="true"/>
+            <ProductCrossReference Type="CompatibleWith"
+                                   ProductID="PROD-COMPATIBLE-002"/>
+            <DeleteProductCrossReference Type="RelatedAccessory"
+                                         ProductID="PROD-OLD-ACCESSORY-099"/>
+
+            <AssetCrossReference Type="ProductImage"
+                                 AssetID="IMG-WALL-001"
+                                 Changed="true"/>
+            <AssetCrossReference Type="TechnicalDatasheet"
+                                 AssetID="PDF-TDS-EN"/>
+            <DeleteAssetCrossReference Type="ProductImage"
+                                       AssetID="IMG-WALL-OLD-001"/>
+
+            <ClassificationReference ClassificationID="FIRE_RATED_PANELS"
+                                     Changed="true"/>
+            <DeleteClassificationReference ClassificationID="DEPRECATED_CATEGORY"/>
+
+            <DataContainers>
+                <MultiDataContainer Type="DoPCompliance">
+                    <DataContainer ID="DOP-COMPLIANCE-001" Changed="true">
+                        <Values>
+                            <Value AttributeID="DoP_Number"       Changed="true">DoP-2024-0042</Value>
+                            <Value AttributeID="DoP_IssuedDate">2024-03-15</Value>
+                            <Value AttributeID="DoP_ValidUntil"   Changed="true">2029-03-15</Value>
+                            <Value AttributeID="DoP_NotifiedBody" QualifierID="en">NB-1390</Value>
+                        </Values>
+                        <AssetCrossReference Type="DoPCertificate"
+                                             AssetID="PDF-DOP-2024-0042"
+                                             Changed="true"/>
+                    </DataContainer>
+                    <DeleteDataContainer ID="DOP-COMPLIANCE-OLD-001"/>
+                </MultiDataContainer>
+            </DataContainers>
+        </Product>
+
+        <!-- PRODUCT 2: Reclassification example (ParentID changed vs DB) -->
+        <Product ID="PROD-ACOUSTIC-PANEL-050"
+                 ParentID="ACOUSTIC_PANELS_V2_FAMILY"
+                 UserTypeID="AcousticPanel"
+                 Changed="true">
+
+            <Name QualifierID="en">Acoustic Panel 50mm</Name>
+
+            <Values>
+                <Value AttributeID="STEP_LastModifiedDate">2024-04-01T11:15:00Z</Value>
+                <Value AttributeID="STEP_LastModifiedByUserID">editor.two</Value>
+                <Value AttributeID="AcousticPerformance" UnitID="dB" Changed="true">38</Value>
+            </Values>
+        </Product>
+
+    </Products>
+
+</STEP-ProductInformation>

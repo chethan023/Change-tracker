@@ -1,0 +1,145 @@
+databases:
+  - name: changetracker-db
+    plan: free
+    databaseName: changetracker
+    user: ct_user
+
+services:
+  - type: redis
+    name: changetracker-redis
+    plan: free
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+
+  - type: web
+    name: changetracker-api
+    runtime: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /docs
+    dockerCommand: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: ENV
+        value: production
+      - key: CLIENT_NAME
+        value: Change Tracker
+      - key: CLIENT_PRIMARY_COLOUR
+        value: "#1B3A6B"
+      - key: CLIENT_LOGO_URL
+        value: ""
+      - key: INGEST_API_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_EXPIRE_MINUTES
+        value: "1440"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: changetracker-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: changetracker-redis
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: changetracker-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: redis
+          name: changetracker-redis
+          property: connectionString
+      - key: STEP_BASE_URL
+        value: https://step.example.com
+      - key: MAX_USERS
+        value: "10"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
+      - key: BOOTSTRAP_EDITOR_EMAIL
+        sync: false
+      - key: BOOTSTRAP_EDITOR_PASSWORD
+        sync: false
+      - key: BOOTSTRAP_VIEWER_EMAIL
+        sync: false
+      - key: BOOTSTRAP_VIEWER_PASSWORD
+        sync: false
+      - key: SMTP_HOST
+        value: ""
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        value: ""
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: EMAIL_FROM
+        value: "PIM Change Tracker <noreply@example.com>"
+      - key: SLACK_DEFAULT_WEBHOOK_URL
+        sync: false
+
+  - type: worker
+    name: changetracker-worker
+    runtime: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerCommand: celery -A workers.celery_app worker --loglevel=info
+    envVars:
+      - key: ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: changetracker-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: changetracker-redis
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: changetracker-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: redis
+          name: changetracker-redis
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        fromService:
+          type: web
+          name: changetracker-api
+          envVarKey: JWT_SECRET_KEY
+      - key: INGEST_API_KEY
+        fromService:
+          type: web
+          name: changetracker-api
+          envVarKey: INGEST_API_KEY
+      - key: CLIENT_NAME
+        value: Change Tracker
+      - key: LOG_LEVEL
+        value: INFO
+      - key: SMTP_HOST
+        value: ""
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        value: ""
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: EMAIL_FROM
+        value: "PIM Change Tracker <noreply@example.com>"
+      - key: SLACK_DEFAULT_WEBHOOK_URL
+        sync: false
