@@ -18,7 +18,6 @@ services:
     rootDir: backend
     dockerfilePath: ./Dockerfile
     healthCheckPath: /docs
-    dockerCommand: /app/start.sh
     envVars:
       - key: ENV
         value: production
@@ -95,6 +94,7 @@ services:
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerCommand: celery -A workers.celery_app worker --loglevel=info
+    # NOTE: celery dockerCommand above is a single argv, no shell features needed.
     envVars:
       - key: ENV
         value: production
