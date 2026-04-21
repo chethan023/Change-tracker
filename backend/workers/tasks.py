@@ -50,6 +50,12 @@ def process_ingest_task(self, snapshot_id: int, payload: str):
             f"Snapshot {snapshot_id} complete: "
             f"{snap.records_parsed} parsed, {snap.records_changed} changed"
         )
+        # New change_records mean the dropdown distinct sets may have grown.
+        try:
+            from app.routers.changes import bust_filter_options_cache
+            bust_filter_options_cache()
+        except Exception:
+            logger.warning("Failed to bust filter options cache", exc_info=True)
         _safe_unlink(payload)
         return {
             "status": "completed",

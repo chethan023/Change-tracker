@@ -103,9 +103,13 @@ class ChangeRecordOut(BaseModel):
 
 
 class ChangeListResponse(BaseModel):
-    total: int
+    # `total` is only computed on page 1 to avoid an expensive COUNT on every
+    # paginated request. Clients should rely on `has_more` for navigation when
+    # `total` is None.
+    total: Optional[int] = None
     page: int
     page_size: int
+    has_more: bool = False
     items: List[ChangeRecordOut]
 
 

@@ -3,6 +3,7 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.config import settings
 from app.routers import auth, ingest, changes, users, snapshots, products, config, notifications
@@ -44,6 +45,8 @@ def create_app() -> FastAPI:
         version="1.0.0",
         description="Tracks STIBO STEP product data changes via STEPXML ingest.",
     )
+
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
 
     app.add_middleware(
         CORSMiddleware,

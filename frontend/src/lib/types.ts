@@ -30,7 +30,8 @@ export interface ChangeRecord {
 }
 
 export interface ChangeListResponse {
-  total: number; page: number; page_size: number;
+  total: number | null; page: number; page_size: number;
+  has_more: boolean;
   items: ChangeRecord[];
 }
 

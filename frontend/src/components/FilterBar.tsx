@@ -1,7 +1,10 @@
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, X } from "lucide-react";
 import { fetchFilterOptions } from "../lib/api";
 import { cn } from "../lib/utils";
+
+const SEARCH_DEBOUNCE_MS = 350;
 
 export interface Filters {
   step_product_id?: string;
@@ -22,7 +25,25 @@ export default function FilterBar({ filters, onChange }: Props) {
   const { data: options } = useQuery({
     queryKey: ["filter-options"],
     queryFn: fetchFilterOptions,
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
   });
+
+  // Search input is buffered locally and debounced before being lifted up so
+  // we don't fire an API request on every keystroke.
+  const [searchDraft, setSearchDraft] = useState(filters.search ?? "");
+
+  useEffect(() => {
+    setSearchDraft(filters.search ?? "");
+  }, [filters.search]);
+
+  useEffect(() => {
+    const next = searchDraft || undefined;
+    if (next === filters.search) return;
+    const t = setTimeout(() => onChange({ ...filters, search: next }), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchDraft]);
 
   const active = Object.entries(filters).filter(([, v]) => v).length;
 
@@ -30,7 +51,10 @@ export default function FilterBar({ filters, onChange }: Props) {
     onChange({ ...filters, [key]: value || undefined });
   };
 
-  const clearAll = () => onChange({});
+  const clearAll = () => {
+    setSearchDraft("");
+    onChange({});
+  };
 
   return (
     <section className="mb-6">
@@ -68,13 +92,13 @@ export default function FilterBar({ filters, onChange }: Props) {
           <input
             type="text"
             placeholder="Search products, attributes, values…"
-            value={filters.search || ""}
-            onChange={(e) => set("search", e.target.value)}
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
             className="flex-1 px-4 py-3 font-mono text-sm bg-transparent text-ink outline-none placeholder:text-ink/30 dark:placeholder:text-ink/55"
           />
-          {filters.search && (
+          {searchDraft && (
             <button
-              onClick={() => set("search", "")}
+              onClick={() => setSearchDraft("")}
               className="px-3 text-ink/40 hover:text-ink dark:text-ink/60"
             >
               <X size={14} />

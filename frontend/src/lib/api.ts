@@ -55,8 +55,11 @@ export async function fetchConfig(): Promise<ClientConfig> {
   return data;
 }
 
-export async function fetchChanges(params: Record<string, any>) {
-  const { data } = await api.get<ChangeListResponse>("/changes", { params });
+export async function fetchChanges(
+  params: Record<string, any>,
+  signal?: AbortSignal,
+) {
+  const { data } = await api.get<ChangeListResponse>("/changes", { params, signal });
   return data;
 }
 

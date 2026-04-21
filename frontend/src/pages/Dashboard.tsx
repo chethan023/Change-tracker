@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, ChevronLeft, ChevronRight } from "lucide-react";
 import { fetchChanges, exportCsvUrl } from "../lib/api";
 import type { ChangeRecord } from "../lib/types";
@@ -13,6 +13,7 @@ const PAGE_SIZE = 50;
 
 export default function Dashboard() {
   const canExport = useAuth((s) => s.isEditor());
+  const queryClient = useQueryClient();
   const [filters, setFilters] = useState<Filters>({});
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<ChangeRecord | null>(null);
@@ -21,15 +22,40 @@ export default function Dashboard() {
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ["changes", queryParams],
-    queryFn: () => fetchChanges(queryParams),
+    queryFn: ({ signal }) => fetchChanges(queryParams, signal),
     placeholderData: (prev) => prev,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
   });
 
   const items = data?.items || [];
-  const total = data?.total || 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const showingFrom = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-  const showingTo = Math.min(page * PAGE_SIZE, total);
+  // Backend only returns `total` on page 1 — cache it so paginated views can
+  // still display the headline count.
+  const [knownTotal, setKnownTotal] = useState<number | null>(null);
+  useEffect(() => {
+    if (typeof data?.total === "number") setKnownTotal(data.total);
+  }, [data?.total]);
+  useEffect(() => {
+    setKnownTotal(null);
+  }, [JSON.stringify(filters)]);
+
+  const total = knownTotal;
+  const hasMore = data?.has_more ?? false;
+  const totalPages =
+    total !== null ? Math.max(1, Math.ceil(total / PAGE_SIZE)) : null;
+  const showingFrom = items.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const showingTo = (page - 1) * PAGE_SIZE + items.length;
+
+  // Prefetch the next page so pagination feels instant.
+  useEffect(() => {
+    if (!hasMore) return;
+    const nextParams = { ...filters, page: page + 1, page_size: PAGE_SIZE };
+    queryClient.prefetchQuery({
+      queryKey: ["changes", nextParams],
+      queryFn: ({ signal }) => fetchChanges(nextParams, signal),
+      staleTime: 30_000,
+    });
+  }, [hasMore, page, filters, queryClient]);
 
   // Reset to page 1 when filters change
   const handleFilterChange = (next: Filters) => {
@@ -50,9 +76,12 @@ export default function Dashboard() {
           </h1>
         </div>
         <div className="flex items-end gap-8 font-mono">
-          <Stat label="Total" value={total.toLocaleString()} />
+          <Stat label="Total" value={total !== null ? total.toLocaleString() : "—"} />
           <Stat label="Showing" value={`${showingFrom}–${showingTo}`} />
-          <Stat label="Page" value={`${page} / ${totalPages}`} />
+          <Stat
+            label="Page"
+            value={totalPages !== null ? `${page} / ${totalPages}` : `${page}`}
+          />
         </div>
       </section>
 
@@ -64,8 +93,10 @@ export default function Dashboard() {
         <div className="font-mono text-[10px] uppercase tracking-wider text-ink/50">
           {isFetching && !isLoading ? (
             <span className="text-amber-900">⦿ refreshing…</span>
-          ) : (
+          ) : total !== null ? (
             `${total.toLocaleString()} record${total === 1 ? "" : "s"}`
+          ) : (
+            `${items.length} on this page`
           )}
         </div>
         {canExport && (
@@ -86,7 +117,7 @@ export default function Dashboard() {
       />
 
       {/* ── Pagination ─────────────────────────────────────── */}
-      {totalPages > 1 && (
+      {(page > 1 || hasMore) && (
         <nav className="mt-6 flex items-center justify-between">
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -102,15 +133,15 @@ export default function Dashboard() {
           </button>
 
           <div className="font-mono text-xs text-ink/60">
-            page {page} of {totalPages}
+            {totalPages !== null ? `page ${page} of ${totalPages}` : `page ${page}`}
           </div>
 
           <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages}
+            onClick={() => setPage((p) => p + 1)}
+            disabled={!hasMore}
             className={cn(
               "flex items-center gap-1 px-3 py-1.5 border-2 border-ink font-mono text-[10px] uppercase tracking-widest transition",
-              page >= totalPages
+              !hasMore
                 ? "opacity-30 cursor-not-allowed"
                 : "bg-surface hover:bg-ink hover:text-paper shadow-sharp hover:shadow-none hover:translate-x-1 hover:translate-y-1"
             )}
