@@ -32,6 +32,14 @@ def process_ingest_task(self, snapshot_id: int, payload: str):
             logger.error(f"Snapshot {snapshot_id} not found")
             return {"status": "not_found"}
 
+        try:
+            with open(payload, "rb") as fh:
+                head = fh.read(200_000)
+            snap.stepxml_raw = head.decode("utf-8", errors="replace")
+            db.commit()
+        except OSError:
+            logger.warning("Could not capture raw payload head for snapshot %s", snapshot_id)
+
         process_snapshot_path(db, snap, payload)
 
         new_changes = db.query(ChangeRecord).filter_by(snapshot_id=snapshot_id).all()
