@@ -19,10 +19,12 @@ from typing import Iterator, Dict, Any, Optional, Union, IO
 from lxml import etree
 
 
-NS = {"s": "http://www.stibosystems.com/step"}
-STEP_NS = NS["s"]
-PRODUCT_TAG = f"{{{STEP_NS}}}Product"
-DELETE_PRODUCT_TAG = f"{{{STEP_NS}}}DeleteProduct"
+# Namespace-agnostic: {*} matches any namespace (including no namespace),
+# so this parser handles both the sample XML (xmlns="http://www.stibosystems.com/step")
+# and live STEP exports that declare no default namespace.
+NS: dict = {}
+PRODUCT_TAG = "{*}Product"
+DELETE_PRODUCT_TAG = "{*}DeleteProduct"
 
 
 def _make_safe_parser() -> etree.XMLParser:
@@ -58,9 +60,10 @@ def parse_stepxml_stream(source: Union[str, IO[bytes]]) -> Iterator[Dict[str, An
                 root = el.getroottree().getroot()
                 context_id = root.get("ContextID")
 
-            if el.tag == PRODUCT_TAG:
+            local = etree.QName(el.tag).localname
+            if local == "Product":
                 yield from _parse_product(el, context_id)
-            elif el.tag == DELETE_PRODUCT_TAG:
+            elif local == "DeleteProduct":
                 yield {
                     "change_element_type": "PRODUCT_DELETED",
                     "step_product_id": el.get("ID"),
@@ -109,7 +112,7 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
     }
 
     # Names (multi-language)
-    for name_el in product.findall("s:Name", NS):
+    for name_el in product.findall("{*}Name"):
         yield {
             "change_element_type": "PRODUCT_NAME_CHANGED",
             "step_product_id": pid,
@@ -119,14 +122,14 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
         }
 
     # Direct <Values>/<Value>
-    for val in product.findall("s:Values/s:Value", NS):
+    for val in product.findall("{*}Values/{*}Value"):
         yield _value_event(val, pid, "ATTRIBUTE_VALUE")
 
     # <Values>/<MultiValue>
-    for mv in product.findall("s:Values/s:MultiValue", NS):
+    for mv in product.findall("{*}Values/{*}MultiValue"):
         values = [
             (v.text or "").strip()
-            for v in mv.findall("s:Value", NS)
+            for v in mv.findall("{*}Value")
             if v.text is not None
         ]
         yield {
@@ -139,7 +142,7 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
         }
 
     # Product cross-references
-    for ref in product.findall("s:ProductCrossReference", NS):
+    for ref in product.findall("{*}ProductCrossReference"):
         yield {
             "change_element_type": "REFERENCE_ADDED",
             "step_product_id": pid,
@@ -148,7 +151,7 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
             "qualifier_id": ref.get("QualifierID"),
             "changed_hint": ref.get("Changed") == "true",
         }
-    for ref in product.findall("s:DeleteProductCrossReference", NS):
+    for ref in product.findall("{*}DeleteProductCrossReference"):
         yield {
             "change_element_type": "REFERENCE_REMOVED",
             "step_product_id": pid,
@@ -156,7 +159,7 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
             "target_id": ref.get("ProductID"),
             "qualifier_id": ref.get("QualifierID"),
         }
-    for ref in product.findall("s:SuppressedProductCrossReference", NS):
+    for ref in product.findall("{*}SuppressedProductCrossReference"):
         yield {
             "change_element_type": "REFERENCE_SUPPRESSED",
             "step_product_id": pid,
@@ -166,7 +169,7 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
         }
 
     # Asset cross-references
-    for a in product.findall("s:AssetCrossReference", NS):
+    for a in product.findall("{*}AssetCrossReference"):
         yield {
             "change_element_type": "ASSET_LINKED",
             "step_product_id": pid,
@@ -175,7 +178,7 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
             "qualifier_id": a.get("QualifierID"),
             "changed_hint": a.get("Changed") == "true",
         }
-    for a in product.findall("s:DeleteAssetCrossReference", NS):
+    for a in product.findall("{*}DeleteAssetCrossReference"):
         yield {
             "change_element_type": "ASSET_UNLINKED",
             "step_product_id": pid,
@@ -183,7 +186,7 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
             "target_id": a.get("AssetID"),
             "qualifier_id": a.get("QualifierID"),
         }
-    for a in product.findall("s:SuppressedAssetCrossReference", NS):
+    for a in product.findall("{*}SuppressedAssetCrossReference"):
         yield {
             "change_element_type": "ASSET_SUPPRESSED",
             "step_product_id": pid,
@@ -193,14 +196,14 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
         }
 
     # Classification references
-    for c in product.findall("s:ClassificationReference", NS):
+    for c in product.findall("{*}ClassificationReference"):
         yield {
             "change_element_type": "CLASSIFICATION_LINKED",
             "step_product_id": pid,
             "target_id": c.get("ClassificationID"),
             "changed_hint": c.get("Changed") == "true",
         }
-    for c in product.findall("s:DeleteClassificationReference", NS):
+    for c in product.findall("{*}DeleteClassificationReference"):
         yield {
             "change_element_type": "CLASSIFICATION_UNLINKED",
             "step_product_id": pid,
@@ -208,7 +211,7 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
         }
 
     # Data containers — use .// to catch both direct and MultiDataContainer-wrapped
-    for dc in product.findall("s:DataContainers//s:DataContainer", NS):
+    for dc in product.findall("{*}DataContainers//{*}DataContainer"):
         container_id = dc.get("ID")
         # Get the container type from the parent MultiDataContainer
         parent = dc.getparent()
@@ -223,13 +226,13 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
         }
 
         # Nested values inside the container
-        for val in dc.findall("s:Values/s:Value", NS):
+        for val in dc.findall("{*}Values/{*}Value"):
             ev = _value_event(val, pid, "CONTAINER_VALUE")
             ev["step_container_id"] = container_id
             yield ev
 
         # Nested asset links inside the container
-        for a in dc.findall("s:AssetCrossReference", NS):
+        for a in dc.findall("{*}AssetCrossReference"):
             yield {
                 "change_element_type": "ASSET_LINKED",
                 "step_product_id": pid,
@@ -239,7 +242,7 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
                 "changed_hint": a.get("Changed") == "true",
             }
 
-    for ddc in product.findall("s:DataContainers//s:DeleteDataContainer", NS):
+    for ddc in product.findall("{*}DataContainers//{*}DeleteDataContainer"):
         yield {
             "change_element_type": "CONTAINER_REMOVED",
             "step_product_id": pid,
