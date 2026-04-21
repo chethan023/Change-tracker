@@ -7,6 +7,7 @@ import type { ChangeRecord, ProductAttributeRow } from "../lib/types";
 import {
   Card, Select, Spinner, Skeleton, EmptyState, ErrorState, Modal, Button,
 } from "../components/ui";
+import { absTime } from "../lib/utils";
 
 const ALL = "__all__";
 
@@ -83,7 +84,7 @@ export default function ProductDetail() {
           )}
           <div><dt className="sr-only">changes</dt>changes: <dd className="inline text-ink tabular-nums">{data.change_count.toLocaleString()}</dd></div>
           {data.last_change_date && (
-            <div><dt className="sr-only">last change</dt>last: <dd className="inline text-ink">{new Date(data.last_change_date).toLocaleString()}</dd></div>
+            <div><dt className="sr-only">last change</dt>last: <dd className="inline text-ink">{absTime(data.last_change_date)}</dd></div>
           )}
         </dl>
       </section>
@@ -322,7 +323,7 @@ function AttributeTimeline({
             <div key={r.id} className="border border-ink/20 p-3 bg-paper/40">
               <div className="flex justify-between font-mono text-[10px] uppercase tracking-widest text-ink/50">
                 <span>{r.change_element_type}</span>
-                <span>{new Date(r.change_date).toLocaleString()}</span>
+                <span>{absTime(r.change_date)}</span>
               </div>
               <div className="grid grid-cols-2 gap-3 mt-2 font-mono text-xs">
                 <div>

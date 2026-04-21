@@ -17,14 +17,20 @@ export const variantClasses: Record<string, string> = {
   move:   "border-brand text-brand bg-brand-50",
 };
 
+// Backend emits naive UTC timestamps (no "Z" suffix). parseISO would treat
+// those as local time, so append "Z" when no timezone is present.
+function asUtc(iso: string): string {
+  return /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : iso + "Z";
+}
+
 /** Human-friendly relative time ("3 minutes ago") + absolute on hover. */
 export function relTime(iso: string): string {
-  try { return formatDistanceToNow(parseISO(iso), { addSuffix: true }); }
+  try { return formatDistanceToNow(parseISO(asUtc(iso)), { addSuffix: true }); }
   catch { return iso; }
 }
 
 export function absTime(iso: string): string {
-  try { return format(parseISO(iso), "yyyy-MM-dd HH:mm"); }
+  try { return format(parseISO(asUtc(iso)), "yyyy-MM-dd HH:mm"); }
   catch { return iso; }
 }
 

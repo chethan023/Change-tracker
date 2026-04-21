@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { Search, ArrowRight, ChevronLeft, ChevronRight, Package } from "lucide-react";
 import { fetchProducts } from "../lib/api";
 import { Input, Select, Button, TableSkeleton, EmptyState, ErrorState } from "../components/ui";
+import { absTime } from "../lib/utils";
 
 const PAGE_SIZE = 50;
 const ALL = "__all__";
@@ -151,7 +152,7 @@ export default function Products() {
                       )}
                     </td>
                     <td className="px-3 py-2 font-mono text-xs text-ink/70">
-                      {p.last_change_date ? new Date(p.last_change_date).toLocaleDateString() : "—"}
+                      {p.last_change_date ? absTime(p.last_change_date).slice(0, 10) : "—"}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <Link
