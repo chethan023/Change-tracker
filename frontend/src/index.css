@@ -25,6 +25,10 @@ textarea.input-bare {
   outline: none;
   background: transparent;
   flex: 1;
+  /* Inputs default to min-width: auto (their intrinsic ~20em size), which
+     stops them shrinking inside flex containers. Force min-width: 0 so the
+     search shell collapses to its parent's width on narrow grid columns. */
+  min-width: 0;
   padding: 10px;
   font-family: var(--font-text);
   font-size: 14px;

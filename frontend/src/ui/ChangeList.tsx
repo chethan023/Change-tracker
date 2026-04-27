@@ -143,12 +143,12 @@ export function ChangeTable({
         <table className="table">
           <thead>
             <tr>
-              <th style={{ width: 200 }}>Product</th>
-              <th style={{ width: 168 }}>Type</th>
-              <th style={{ width: 200 }}>Attribute / Target</th>
+              <th style={{ width: 168 }}>Product</th>
+              <th style={{ width: 144 }}>Type</th>
+              <th style={{ width: 168 }}>Attribute / Target</th>
               <th>Previous</th>
               <th>Current</th>
-              <th style={{ width: 160 }}>When &amp; who</th>
+              <th style={{ width: 144 }}>When &amp; who</th>
             </tr>
           </thead>
           <tbody>

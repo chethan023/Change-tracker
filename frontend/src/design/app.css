@@ -131,6 +131,11 @@ body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--fo
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
+  /* Defensive: when a card sits inside a flex/grid item that's been told it
+     can shrink (min-width: 0), the card itself also needs to allow shrinking
+     — otherwise wide content (e.g. a table with min-width: max-content)
+     pushes the card past its container. */
+  min-width: 0;
 }
 .card-hover { transition: box-shadow var(--dur-base), transform var(--dur-base), border-color var(--dur-base); }
 .card-hover:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); }
@@ -183,6 +188,12 @@ body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--fo
    sides so users get a visible cue when the table extends past the viewport. */
 .table-wrap {
   overflow-x: auto;
+  /* min-width: 0 + max-width: 100% lets the wrap shrink to its container so
+     the inner table's min-width: max-content overflows here (and scrolls)
+     instead of pushing the card past its grid column. Without this the
+     dashboard table bled into the right-side aside on narrower viewports. */
+  min-width: 0;
+  max-width: 100%;
   /* Scroll-shadow gradients. End color must match --bg-elevated at 0 alpha so
      gradients don't interpolate through white in dark mode. */
   background:
@@ -475,7 +486,9 @@ body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--fo
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: 22px;
-  align-items: flex-start;
+  /* `start` is the correct grid keyword; `flex-start` is the flexbox alias
+     and not all browsers map it cleanly in grid contexts. */
+  align-items: start;
 }
 @media (max-width: 1080px) {
   .dash-grid { grid-template-columns: 1fr; }

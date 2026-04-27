@@ -226,6 +226,9 @@ export function Segmented<T extends string>({
 
 /* ── Switch ─────────────────────────────────────────────────── */
 export function Switch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  // Don't set inline `border` or `background` — the .switch class owns the
+  // track styling, and inline styles win the cascade. Only reset the bits
+  // the user-agent button stylesheet would otherwise leak (font, padding).
   return (
     <button
       type="button"
@@ -233,7 +236,7 @@ export function Switch({ on, onToggle }: { on: boolean; onToggle: () => void }) 
       aria-checked={on}
       onClick={onToggle}
       className={`switch ${on ? "on" : ""}`}
-      style={{ appearance: "none", border: "none", padding: 0, cursor: "pointer", background: "transparent" }}
+      style={{ appearance: "none", padding: 0, font: "inherit" }}
     />
   );
 }
