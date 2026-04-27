@@ -270,18 +270,24 @@ function ValueCell({
     <span
       title={String(value)}
       style={{
-        display: "inline-block",
+        display: "-webkit-box",
+        WebkitLineClamp: 3,
+        WebkitBoxOrient: "vertical",
         background: palette.bg,
         color: palette.fg,
         padding: "3px 8px",
         borderRadius: 6,
         fontFamily: "var(--font-mono)",
         fontSize: 11.5,
+        lineHeight: 1.45,
         borderLeft: `2px solid ${palette.line}`,
-        maxWidth: "100%",
-        whiteSpace: "nowrap",
+        // Cap cell width and let long unbreakable strings (URLs, hashes,
+        // IDs) wrap inside it instead of expanding the column. Hover shows
+        // the full value via the title attribute.
+        maxWidth: 280,
         overflow: "hidden",
-        textOverflow: "ellipsis",
+        overflowWrap: "anywhere",
+        wordBreak: "break-word",
       }}
     >
       {value}
