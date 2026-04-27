@@ -176,14 +176,26 @@ class ChangeRecordOut(BaseModel):
 
 
 class ChangeListResponse(BaseModel):
-    # `total` is only computed on page 1 — on a multi-million-row table the
-    # COUNT(*) dominates latency. Subsequent pages return None and the client
-    # uses `has_more` to drive pagination instead.
+    # `total` is only computed when no cursor is supplied (first page). On
+    # multi-million-row tables COUNT(*) dominates latency — every subsequent
+    # page returns None and the client drives navigation via `next_cursor` /
+    # `has_more`.
     total: Optional[int] = None
-    page: int
-    page_size: int
     has_more: bool = False
+    next_cursor: Optional[str] = None
     items: List[ChangeRecordOut]
+
+
+class ProductListResponse(BaseModel):
+    has_more: bool = False
+    next_cursor: Optional[str] = None
+    items: List["ProductOut"]
+
+
+class SnapshotListResponse(BaseModel):
+    has_more: bool = False
+    next_cursor: Optional[str] = None
+    items: List["SnapshotOut"]
 
 
 class FilterOptions(BaseModel):

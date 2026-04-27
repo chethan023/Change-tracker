@@ -24,7 +24,7 @@ export default function CommandPalette() {
 
   const { data: recent } = useQuery({
     queryKey: ["changes", "recent"],
-    queryFn: () => fetchChanges({ page: 1, page_size: 8 }),
+    queryFn: () => fetchChanges({ limit: 8 }),
     enabled: open,
   });
 

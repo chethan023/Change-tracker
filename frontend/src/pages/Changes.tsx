@@ -1,13 +1,12 @@
 /**
- * /changes — comprehensive paginated list of every change record.
+ * /changes — keyset-paginated full record of every change.
  *
- * The Dashboard shows a snapshot (latest 25); this page is the full record
- * with explicit Prev/Next pagination. Filters mirror the dashboard's so the
- * whole filter UI is reused as-is.
+ * Pagination model: opaque cursor returned by the server. We keep a stack of
+ * cursors (`[null, c1, c2, …]` where the index is the page number) so Prev
+ * is O(1) and Next pushes the cursor we got back. This avoids the deep-page
+ * latency cliff that OFFSET-based pagination hits at 100k+ rows.
  *
- * Pagination strategy: backend returns `total` only on page 1 (cost reasons)
- * and `has_more` on every page. We keep the page-1 total around in state so
- * we can still display "Page X of Y" while flipping pages.
+ * Search is debounced 350 ms so we don't fire a request per keystroke.
  */
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -21,23 +20,45 @@ import { toast } from "../ui/toast";
 import {
   fetchChanges, fetchFilterOptions, exportCsvUrl,
 } from "../lib/api";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import type { ChangeRecord } from "../lib/types";
 
 const PAGE_SIZE = 50;
 
 export default function Changes() {
   const [filters, setFilters] = useState<Filters>({});
-  const [page, setPage] = useState(1);
+  // cursorStack[i] is the cursor that produces page i+1.
+  // cursorStack[0] is always null (first page) and never popped.
+  const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
   const [knownTotal, setKnownTotal] = useState<number | null>(null);
   const openDiff = useAppShell((s) => s.openDiff);
   const canExport = useAuth((s) => s.isEditor());
 
-  // Reset to page 1 whenever filters change — otherwise users land on an
-  // empty page when narrowing the filter.
+  // Debounce the typed search value into the value that drives queries.
+  const debouncedSearch = useDebouncedValue(filters.search ?? "", 350);
+  const queryFilters = useMemo(
+    () => ({ ...filters, search: debouncedSearch || undefined }),
+    [filters, debouncedSearch],
+  );
+
+  // Reset pagination + cached total whenever the *effective* filter set
+  // changes. Using queryFilters (debounced) avoids resetting on every
+  // keystroke before the request actually fires.
   useEffect(() => {
-    setPage(1);
+    setCursorStack([null]);
     setKnownTotal(null);
-  }, [filters]);
+  }, [
+    queryFilters.search,
+    queryFilters.change_element_type,
+    queryFilters.step_product_id,
+    queryFilters.attribute_id,
+    queryFilters.qualifier_id,
+    queryFilters.changed_by,
+    queryFilters.snapshot_week,
+  ]);
+
+  const page = cursorStack.length; // 1-indexed for display
+  const cursor = cursorStack[cursorStack.length - 1];
 
   const { data: options } = useQuery({
     queryKey: ["filter-options"],
@@ -45,34 +66,49 @@ export default function Changes() {
   });
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ["changes", "all", page, filters],
+    queryKey: ["changes", "all", cursor, queryFilters],
     queryFn: ({ signal }) =>
       fetchChanges(
         {
-          page,
-          page_size: PAGE_SIZE,
-          ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)),
+          limit: PAGE_SIZE,
+          ...(cursor ? { cursor } : {}),
+          ...Object.fromEntries(
+            Object.entries(queryFilters).filter(([, v]) => v),
+          ),
         },
         signal,
       ),
-    placeholderData: (prev) => prev, // smoother flips
+    placeholderData: (prev) => prev,
   });
 
-  // Cache total from page 1 so subsequent pages can still render "of N".
+  // Cache total returned on the first page so deeper pages can render "of N".
   useEffect(() => {
-    if (page === 1 && data?.total != null) setKnownTotal(data.total);
-  }, [page, data?.total]);
+    if (cursor == null && data?.total != null) setKnownTotal(data.total);
+  }, [cursor, data?.total]);
 
   const rows = data?.items ?? [];
-  const hasMore = data?.has_more ?? (rows.length === PAGE_SIZE);
-
+  const hasMore = data?.has_more ?? false;
   const totalPages = useMemo(() => {
     if (knownTotal == null) return null;
     return Math.max(1, Math.ceil(knownTotal / PAGE_SIZE));
   }, [knownTotal]);
 
+  const onNext = () => {
+    if (!data?.next_cursor) return;
+    setCursorStack((s) => [...s, data.next_cursor]);
+  };
+  const onPrev = () => {
+    setCursorStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
+  };
+
   const onExport = () => {
-    const url = exportCsvUrl({ ...filters });
+    // Export runs against the current effective filter set, not a cursor —
+    // the backend streams the full filtered result.
+    const url = exportCsvUrl({
+      ...Object.fromEntries(
+        Object.entries(queryFilters).filter(([, v]) => v),
+      ),
+    });
     window.open(url, "_blank");
     toast({
       tone: "info",
@@ -117,7 +153,7 @@ export default function Changes() {
               }
               action={
                 page > 1 ? (
-                  <Button variant="secondary" size="sm" onClick={() => setPage(1)}>
+                  <Button variant="secondary" size="sm" onClick={() => setCursorStack([null])}>
                     Back to page 1
                   </Button>
                 ) : (
@@ -139,8 +175,8 @@ export default function Changes() {
               totalPages={totalPages}
               hasMore={hasMore}
               isFetching={isFetching}
-              onPrev={() => setPage((p) => Math.max(1, p - 1))}
-              onNext={() => setPage((p) => p + 1)}
+              onPrev={onPrev}
+              onNext={onNext}
               pageSize={PAGE_SIZE}
               rowsOnPage={rows.length}
             />

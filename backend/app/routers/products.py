@@ -1,6 +1,15 @@
-"""Products router — product listing + per-product timeline + detail."""
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
+"""Products router — paginated product listing + per-product timeline + detail.
+
+Listing uses keyset pagination on `step_product_id` ASC. Aggregates
+(`change_count`, `last_change_date`) are fetched as correlated scalar
+subqueries so the planner only computes them for the (limit+1) products in
+the current window — not the whole table per request, which is what the
+old GROUP BY across the full join was doing.
+"""
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -12,33 +21,79 @@ from app.models import (
 from app.schemas import ProductOut, ChangeRecordOut
 from app.schemas.schemas import (
     ProductDetail, ProductAttributeRow, ProductReferenceRow,
+    ProductListResponse,
 )
+from app.services.pagination import decode_cursor, encode_cursor
 
 
 router = APIRouter(prefix="/api/v1/products", tags=["products"])
 
 
-@router.get("", response_model=list[ProductOut])
-def list_products(db: Session = Depends(get_db), user: User = Depends(get_current_user), limit: int = 500):
-    # Aggregate change counts per product
-    q = (
-        db.query(
-            Product.step_product_id, Product.parent_id, Product.user_type_id,
-            func.count(ChangeRecord.id).label("change_count"),
-            func.max(ChangeRecord.change_date).label("last_change_date"),
-        )
-        .outerjoin(ChangeRecord, ChangeRecord.step_product_id == Product.step_product_id)
-        .group_by(Product.step_product_id, Product.parent_id, Product.user_type_id)
-        .order_by(func.max(ChangeRecord.change_date).desc().nullslast())
-        .limit(limit)
+@router.get("", response_model=ProductListResponse)
+def list_products(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    search: Optional[str] = None,
+    cursor: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=200),
+):
+    base = db.query(Product)
+
+    if search:
+        needle = f"%{search}%"
+        base = base.filter(or_(
+            Product.step_product_id.ilike(needle),
+            Product.parent_id.ilike(needle),
+            Product.user_type_id.ilike(needle),
+        ))
+
+    cur = decode_cursor(cursor)
+    if cur and "p" in cur:
+        base = base.filter(Product.step_product_id > cur["p"])
+
+    rows = (
+        base.order_by(Product.step_product_id.asc())
+            .limit(limit + 1)
+            .all()
     )
-    return [
-        ProductOut(
-            step_product_id=pid, parent_id=parent, user_type_id=utype,
-            change_count=count, last_change_date=lastc,
+    has_more = len(rows) > limit
+    page_rows = rows[:limit]
+
+    # Per-product aggregates over the loaded window only — bounded work even
+    # when the products table grows past 100k.
+    pids = [p.step_product_id for p in page_rows]
+    stats: dict[str, tuple[int, Optional[object]]] = {}
+    if pids:
+        agg = (
+            db.query(
+                ChangeRecord.step_product_id,
+                func.count(ChangeRecord.id),
+                func.max(ChangeRecord.change_date),
+            )
+            .filter(ChangeRecord.step_product_id.in_(pids))
+            .group_by(ChangeRecord.step_product_id)
+            .all()
         )
-        for pid, parent, utype, count, lastc in q.all()
-    ]
+        stats = {pid: (cnt, last) for pid, cnt, last in agg}
+
+    items = []
+    for p in page_rows:
+        cnt, last = stats.get(p.step_product_id, (0, None))
+        items.append(ProductOut(
+            step_product_id=p.step_product_id,
+            parent_id=p.parent_id,
+            user_type_id=p.user_type_id,
+            change_count=cnt,
+            last_change_date=last,
+        ))
+
+    next_cursor = (
+        encode_cursor({"p": page_rows[-1].step_product_id})
+        if has_more and page_rows else None
+    )
+    return ProductListResponse(
+        has_more=has_more, next_cursor=next_cursor, items=items,
+    )
 
 
 @router.get("/{product_id}", response_model=ProductDetail)
@@ -106,8 +161,15 @@ def product_detail(product_id: str, db: Session = Depends(get_db), user: User = 
 
 
 @router.get("/{product_id}/timeline", response_model=list[ChangeRecordOut])
-def product_timeline(product_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def product_timeline(
+    product_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    limit: int = Query(100, ge=1, le=500),
+):
     rows = (db.query(ChangeRecord)
               .filter_by(step_product_id=product_id)
-              .order_by(ChangeRecord.change_date.desc()).all())
+              .order_by(ChangeRecord.change_date.desc(), ChangeRecord.id.desc())
+              .limit(limit)
+              .all())
     return [ChangeRecordOut.model_validate(r) for r in rows]

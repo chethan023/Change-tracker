@@ -1,9 +1,9 @@
 import axios from "axios";
 import type {
   ChangeListResponse, ChangeRecord, FilterOptions,
-  Snapshot, ClientConfig, User, NotificationRule,
+  ClientConfig, User, NotificationRule,
   NotificationFilterOptions,
-  Product, ProductDetail,
+  ProductDetail, ProductListResponse, SnapshotListResponse,
 } from "./types";
 
 const API_ROOT = (import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ?? "") + "/api/v1";
@@ -138,8 +138,13 @@ export async function fetchFilterOptions(): Promise<FilterOptions> {
   return data;
 }
 
-export async function fetchSnapshots(): Promise<Snapshot[]> {
-  const { data } = await api.get("/snapshots");
+export async function fetchSnapshots(
+  params: { search?: string; cursor?: string; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<SnapshotListResponse> {
+  const { data } = await api.get<SnapshotListResponse>("/snapshots", {
+    params, signal,
+  });
   return data;
 }
 
@@ -197,8 +202,13 @@ export async function fetchNotificationFilterOptions(
   return data;
 }
 
-export async function fetchProducts(): Promise<Product[]> {
-  const { data } = await api.get("/products");
+export async function fetchProducts(
+  params: { search?: string; cursor?: string; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<ProductListResponse> {
+  const { data } = await api.get<ProductListResponse>("/products", {
+    params, signal,
+  });
   return data;
 }
 

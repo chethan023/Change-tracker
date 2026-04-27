@@ -49,14 +49,17 @@ export default function Dashboard() {
       ),
   });
 
-  const { data: snapshots } = useQuery({
-    queryKey: ["snapshots"],
-    queryFn: fetchSnapshots,
+  // Pull a small slice for the dashboard sidebars + 24h ingest sparkline.
+  // 50 rows comfortably covers a day of ingests and keeps the response tiny.
+  const { data: snapshotsPage } = useQuery({
+    queryKey: ["snapshots", "dashboard"],
+    queryFn: ({ signal }) => fetchSnapshots({ limit: 50 }, signal),
     refetchInterval: 60_000,
     // Skip polling when the tab is hidden — saves API roundtrips and the DB
     // hit each minute for users who keep the dashboard open in the background.
     refetchIntervalInBackground: false,
   });
+  const snapshots = snapshotsPage?.items;
 
   const rows = page?.items || [];
 

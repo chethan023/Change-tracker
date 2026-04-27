@@ -11,13 +11,14 @@ import time
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import distinct, or_
+from sqlalchemy import and_, distinct, or_
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.dependencies import get_current_user, get_current_user_flex
 from app.models import ChangeRecord, User
 from app.schemas import ChangeRecordOut, ChangeListResponse, FilterOptions
+from app.services.pagination import decode_cursor, encode_cursor
 
 
 router = APIRouter(prefix="/api/v1", tags=["changes"])
@@ -65,9 +66,17 @@ def list_changes(
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
     search: Optional[str] = None,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=500),
+    cursor: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=200),
 ):
+    """
+    Keyset pagination on (change_date DESC, id DESC). Backed by composite
+    index `ix_cr_date_id`, so deep pages cost the same as the first one.
+
+    `total` is returned only on the first page (no cursor) — COUNT(*) on a
+    multi-million-row table dominates latency and the UI only needs the
+    aggregate once per filter set.
+    """
     base = db.query(ChangeRecord)
     base = _apply_filters(
         base,
@@ -76,26 +85,44 @@ def list_changes(
         snapshot_week=snapshot_week, date_from=date_from, date_to=date_to, search=search,
     )
 
-    # Only run COUNT(*) on page 1 — on a multi-million-row table the count
-    # dominates latency and clients drive pagination via has_more anyway.
-    total: Optional[int] = base.count() if page == 1 else None
+    cur = decode_cursor(cursor)
+    if cur and "d" in cur and "i" in cur:
+        try:
+            cur_date = datetime.fromisoformat(cur["d"])
+            cur_id = int(cur["i"])
+            # Strict keyset comparison on the composite sort key — avoids the
+            # boundary skip/repeat that OFFSET hits when rows are inserted
+            # mid-pagination.
+            base = base.filter(
+                or_(
+                    ChangeRecord.change_date < cur_date,
+                    and_(ChangeRecord.change_date == cur_date,
+                         ChangeRecord.id < cur_id),
+                )
+            )
+        except (TypeError, ValueError):
+            pass  # malformed cursor -> first page
 
-    # Fetch one extra row to detect whether another page exists without
-    # paying for a second query.
+    total: Optional[int] = None
+    if cursor is None:
+        total = base.with_entities(ChangeRecord.id).count()
+
     rows = (
         base.order_by(ChangeRecord.change_date.desc(), ChangeRecord.id.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size + 1)
+            .limit(limit + 1)
             .all()
     )
-    has_more = len(rows) > page_size
-    items = rows[:page_size]
+    has_more = len(rows) > limit
+    items = rows[:limit]
+    next_cursor = (
+        encode_cursor({"d": items[-1].change_date.isoformat(), "i": items[-1].id})
+        if has_more and items else None
+    )
 
     return ChangeListResponse(
         total=total,
-        page=page,
-        page_size=page_size,
         has_more=has_more,
+        next_cursor=next_cursor,
         items=[ChangeRecordOut.model_validate(i) for i in items],
     )
 

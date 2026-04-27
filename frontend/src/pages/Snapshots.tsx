@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import {
   Masthead,
   Icon,
@@ -11,7 +11,10 @@ import {
   relTime,
 } from "../ui/primitives";
 import { fetchSnapshots } from "../lib/api";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import type { Snapshot } from "../lib/types";
+
+const PAGE_SIZE = 50;
 
 function statusBadge(s: Snapshot) {
   const ok = s.status === "ok" || s.status === "parsed";
@@ -38,26 +41,49 @@ function statusBadge(s: Snapshot) {
 export default function Snapshots() {
   const [q, setQ] = useState("");
   const [detail, setDetail] = useState<Snapshot | null>(null);
-  const { data, isLoading } = useQuery({
-    queryKey: ["snapshots"],
-    queryFn: fetchSnapshots,
+  const debouncedQ = useDebouncedValue(q, 350);
+
+  const {
+    data, isLoading, isFetching, isFetchingNextPage,
+    hasNextPage, fetchNextPage,
+  } = useInfiniteQuery({
+    queryKey: ["snapshots", debouncedQ],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      fetchSnapshots(
+        {
+          limit: PAGE_SIZE,
+          ...(pageParam ? { cursor: pageParam } : {}),
+          ...(debouncedQ ? { search: debouncedQ } : {}),
+        },
+        signal,
+      ),
+    getNextPageParam: (last) => (last.has_more ? last.next_cursor : null),
+    // First page polls so the dashboard reflects new ingests; deeper pages
+    // are static history and don't need to refetch on an interval.
     refetchInterval: 30_000,
   });
 
-  const list = (data || []).filter(
-    (s) =>
-      !q ||
-      String(s.id).includes(q) ||
-      s.file_hash?.toLowerCase().includes(q.toLowerCase()) ||
-      s.snapshot_week?.toLowerCase().includes(q.toLowerCase())
+  const list = useMemo(
+    () => (data?.pages ?? []).flatMap((p) => p?.items ?? []),
+    [data],
   );
 
-  const parseRate = (() => {
-    const total = (data || []).reduce((s, x) => s + x.records_parsed, 0);
-    const changed = (data || []).reduce((s, x) => s + x.records_changed, 0);
+  // Parse rate is computed across loaded rows only — labelled as such if we
+  // wanted to be picky, but it's a directional metric that converges fast.
+  const parseRate = useMemo(() => {
+    const total = list.reduce((s, x) => s + x.records_parsed, 0);
+    const changed = list.reduce((s, x) => s + x.records_changed, 0);
     if (total === 0) return "—";
     return `${((changed / total) * 100).toFixed(1)}%`;
-  })();
+  }, [list]);
+
+  // Best-effort prefetch of page 2 once the first page lands.
+  useEffect(() => {
+    if (data?.pages?.length === 1 && hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [data?.pages?.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
     <div className="fade-in">
@@ -68,11 +94,11 @@ export default function Snapshots() {
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 20 }}>
-        <StatCard label="Total payloads" value={(data || []).length} />
+        <StatCard label="Loaded payloads" value={list.length} />
         <StatCard label="Change yield" value={parseRate} tone="up" />
         <StatCard
           label="Latest"
-          value={data && data[0] ? relTime(data[0].received_at) : "—"}
+          value={list[0] ? relTime(list[0].received_at) : "—"}
         />
       </div>
 
@@ -91,8 +117,12 @@ export default function Snapshots() {
       ) : list.length === 0 ? (
         <EmptyState
           icon="archive"
-          title="No snapshots yet"
-          body="When STEP OIEP sends a STEPXML payload, it will appear here."
+          title={debouncedQ ? "No snapshots match" : "No snapshots yet"}
+          body={
+            debouncedQ
+              ? "Try a different search term."
+              : "When STEP OIEP sends a STEPXML payload, it will appear here."
+          }
         />
       ) : (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -162,6 +192,39 @@ export default function Snapshots() {
               ))}
             </tbody>
           </table>
+         </div>
+         <div
+           style={{
+             display: "flex", alignItems: "center", justifyContent: "space-between",
+             padding: "10px 14px",
+             borderTop: "1px solid var(--border-subtle)",
+             background: "var(--bg-elevated)",
+           }}
+         >
+           <div style={{ fontSize: 12.5, color: "var(--fg-tertiary)" }}>
+             {list.length.toLocaleString()} loaded
+             {isFetching && !isFetchingNextPage && (
+               <span style={{ marginLeft: 8 }} className="spinner" />
+             )}
+           </div>
+           {hasNextPage ? (
+             <button
+               type="button"
+               className="btn btn-secondary btn-sm"
+               onClick={() => fetchNextPage()}
+               disabled={isFetchingNextPage}
+             >
+               {isFetchingNextPage ? (
+                 <><span className="spinner" /> Loading…</>
+               ) : (
+                 <>Load more <Icon name="chevron-down" size={13} /></>
+               )}
+             </button>
+           ) : (
+             <span style={{ fontSize: 12.5, color: "var(--fg-quaternary)" }}>
+               End of list
+             </span>
+           )}
          </div>
         </div>
       )}

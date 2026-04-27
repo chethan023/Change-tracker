@@ -6,7 +6,7 @@ import { useTheme, applyTheme } from "../lib/theme";
 import { useAuth } from "../lib/auth";
 import { useAppShell } from "./shell";
 import {
-  fetchSnapshots, fetchProducts, fetchUsers,
+  fetchSnapshots, fetchUsers,
   fetchNotificationRules, fetchChanges,
 } from "../lib/api";
 import { relTime } from "../lib/utils";
@@ -34,11 +34,12 @@ const TABS: Tab[] = [
 function useLastIngest() {
   const { data } = useQuery({
     queryKey: ["snapshots", "latest"],
-    queryFn: fetchSnapshots,
+    queryFn: ({ signal }) => fetchSnapshots({ limit: 1 }, signal),
     refetchInterval: 60_000,
   });
-  if (!data || data.length === 0) return null;
-  return data[0];
+  const items = data?.items;
+  if (!items || items.length === 0) return null;
+  return items[0];
 }
 
 /** Safely extract the hostname from a URL string. Returns null on any parse error. */
@@ -392,24 +393,17 @@ function NavCount({ n }: { n: number }) {
 function useNavCounts(isAdmin: boolean): Record<string, number | undefined> {
   const STALE = 5 * 60_000;
 
+  // Nav badges. We deliberately *don't* fetch a total count for snapshots or
+  // products — at 100k+ rows COUNT(*) on every nav render is a non-trivial
+  // load. The `/changes` total comes for free on the first-page response.
   const changes = useQuery({
     queryKey: ["changes", "nav-count"],
-    queryFn: () => fetchChanges({ page: 1, page_size: 1 }),
-    staleTime: STALE,
-  });
-  const snapshots = useQuery({
-    queryKey: ["snapshots"],
-    queryFn: fetchSnapshots,
+    queryFn: () => fetchChanges({ limit: 1 }),
     staleTime: STALE,
   });
   const rules = useQuery({
     queryKey: ["notification-rules"],
     queryFn: fetchNotificationRules,
-    staleTime: STALE,
-  });
-  const products = useQuery({
-    queryKey: ["products"],
-    queryFn: fetchProducts,
     staleTime: STALE,
   });
   const users = useQuery({
@@ -422,9 +416,9 @@ function useNavCounts(isAdmin: boolean): Record<string, number | undefined> {
   return {
     "/":              changes.data?.total   ?? undefined,
     "/changes":       changes.data?.total   ?? undefined,
-    "/snapshots":     snapshots.data?.length,
+    "/snapshots":     undefined,
     "/notifications": rules.data?.length,
-    "/products":      products.data?.length,
+    "/products":      undefined,
     "/users":         users.data?.length,
     "/settings":      undefined,
   };

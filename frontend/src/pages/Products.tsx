@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
   Masthead,
@@ -9,23 +9,48 @@ import {
   relTime,
 } from "../ui/primitives";
 import { fetchProducts } from "../lib/api";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
+
+const PAGE_SIZE = 50;
 
 export default function Products() {
   const [q, setQ] = useState("");
   const navigate = useNavigate();
-  const { data, isLoading } = useQuery({ queryKey: ["products"], queryFn: fetchProducts });
+  const debouncedQ = useDebouncedValue(q, 350);
 
-  const list = useMemo(() => {
-    if (!data) return [];
-    const s = q.toLowerCase();
-    return data.filter(
-      (p) =>
-        !s ||
-        p.step_product_id.toLowerCase().includes(s) ||
-        p.user_type_id?.toLowerCase().includes(s) ||
-        p.parent_id?.toLowerCase().includes(s)
-    );
-  }, [data, q]);
+  const {
+    data, isLoading, isFetching, isFetchingNextPage,
+    hasNextPage, fetchNextPage,
+  } = useInfiniteQuery({
+    queryKey: ["products", debouncedQ],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      fetchProducts(
+        {
+          limit: PAGE_SIZE,
+          ...(pageParam ? { cursor: pageParam } : {}),
+          ...(debouncedQ ? { search: debouncedQ } : {}),
+        },
+        signal,
+      ),
+    getNextPageParam: (last) => (last.has_more ? last.next_cursor : null),
+  });
+
+  const list = useMemo(
+    // Guard against a stale backend that still returns the legacy bare-list
+    // shape (no `items` field) — produces an empty list instead of mapping
+    // over `undefined` and crashing the page.
+    () => (data?.pages ?? []).flatMap((p) => p?.items ?? []),
+    [data],
+  );
+
+  // Best-effort prefetch of page 2 once the first page lands. Keeps the
+  // initial render small but makes the first "Load more" instant.
+  useEffect(() => {
+    if (data?.pages?.length === 1 && hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [data?.pages?.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
     <div className="fade-in">
@@ -44,7 +69,15 @@ export default function Products() {
           <span className="spinner" style={{ marginRight: 8 }} /> Loading products…
         </div>
       ) : list.length === 0 ? (
-        <EmptyState icon="package" title="No products yet" body="Products will appear here after the first STEPXML ingest." />
+        <EmptyState
+          icon="package"
+          title={debouncedQ ? "No products match" : "No products yet"}
+          body={
+            debouncedQ
+              ? "Try a different search term."
+              : "Products will appear here after the first STEPXML ingest."
+          }
+        />
       ) : (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
          <div className="table-wrap">
@@ -147,7 +180,60 @@ export default function Products() {
             </tbody>
           </table>
          </div>
+         <LoadMoreFooter
+           hasNextPage={!!hasNextPage}
+           isFetching={isFetching}
+           isFetchingNextPage={isFetchingNextPage}
+           loaded={list.length}
+           onLoadMore={() => fetchNextPage()}
+         />
         </div>
+      )}
+    </div>
+  );
+}
+
+function LoadMoreFooter({
+  hasNextPage, isFetching, isFetchingNextPage, loaded, onLoadMore,
+}: {
+  hasNextPage: boolean;
+  isFetching: boolean;
+  isFetchingNextPage: boolean;
+  loaded: number;
+  onLoadMore: () => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "10px 14px",
+        borderTop: "1px solid var(--border-subtle)",
+        background: "var(--bg-elevated)",
+      }}
+    >
+      <div style={{ fontSize: 12.5, color: "var(--fg-tertiary)" }}>
+        {loaded.toLocaleString()} loaded
+        {isFetching && !isFetchingNextPage && (
+          <span style={{ marginLeft: 8 }} className="spinner" />
+        )}
+      </div>
+      {hasNextPage ? (
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={onLoadMore}
+          disabled={isFetchingNextPage}
+        >
+          {isFetchingNextPage ? (
+            <><span className="spinner" /> Loading…</>
+          ) : (
+            <>Load more <Icon name="chevron-down" size={13} /></>
+          )}
+        </button>
+      ) : (
+        <span style={{ fontSize: 12.5, color: "var(--fg-quaternary)" }}>
+          End of list
+        </span>
       )}
     </div>
   );

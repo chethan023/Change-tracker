@@ -30,9 +30,22 @@ export interface ChangeRecord {
 }
 
 export interface ChangeListResponse {
-  total: number | null; page: number; page_size: number;
+  total: number | null;
   has_more: boolean;
+  next_cursor: string | null;
   items: ChangeRecord[];
+}
+
+export interface ProductListResponse {
+  has_more: boolean;
+  next_cursor: string | null;
+  items: Product[];
+}
+
+export interface SnapshotListResponse {
+  has_more: boolean;
+  next_cursor: string | null;
+  items: Snapshot[];
 }
 
 export interface FilterOptions {
