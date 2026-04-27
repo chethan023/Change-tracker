@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db.session import get_db
 from app.models import User
-from app.services.auth import decode_access_token
+from app.services.auth import (
+    decode_access_token_strict, TokenExpired, TokenInvalid,
+)
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
@@ -15,18 +17,44 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=F
 def _resolve_user(token: str | None, db: Session) -> User:
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    payload = decode_access_token(token)
-    if not payload or "sub" not in payload:
+    try:
+        payload = decode_access_token_strict(token)
+    except TokenExpired:
+        raise HTTPException(status_code=401, detail="token_expired")
+    except TokenInvalid:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    if "sub" not in payload:
         raise HTTPException(status_code=401, detail="Invalid token")
     user = db.query(User).filter_by(id=int(payload["sub"])).first()
     if not user or not user.active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
+    iat = int(payload.get("iat") or 0)
+    if iat and iat < int(user.tokens_invalidated_at or 0):
+        raise HTTPException(status_code=401, detail="token_revoked")
     return user
 
 
-def require_api_key(x_api_key: str = Header(None)) -> None:
-    """Guard for the /ingest endpoint — validates X-API-Key header."""
-    if not x_api_key or x_api_key != settings.INGEST_API_KEY:
+def require_api_key(
+    x_api_key: str = Header(None),
+    db: Session = Depends(get_db),
+) -> None:
+    """Guard for the /ingest endpoint — validates X-API-Key header.
+
+    Prefers the DB-stored key (set via the admin Settings → STEP "Rotate"
+    action) and falls back to the INGEST_API_KEY env var when no DB key
+    has been generated. constant_time compare prevents timing leaks."""
+    if not x_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing API key",
+        )
+    # Local import avoids a circular import at module load time.
+    from app.models import ClientConfig
+    row = db.query(ClientConfig).first()
+    db_key = row.ingest_api_key if row else None
+    expected = db_key or settings.INGEST_API_KEY or ""
+    import hmac as _hmac
+    if not expected or not _hmac.compare_digest(x_api_key, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing API key",

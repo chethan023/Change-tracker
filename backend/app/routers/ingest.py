@@ -27,6 +27,13 @@ MAX_BODY_BYTES = 256 * 1024 * 1024
 INGEST_SPOOL_DIR = os.environ.get("INGEST_SPOOL_DIR") or tempfile.gettempdir()
 
 
+_XML_CONTENT_TYPES = {
+    "application/xml",
+    "text/xml",
+    "application/atom+xml",
+}
+
+
 @router.post(
     "/ingest",
     response_model=IngestResponse,
@@ -40,6 +47,14 @@ async def ingest(request: Request, db: Session = Depends(get_db)):
     Streams the body to a temp file (chunked), computing the SHA-256 as
     bytes arrive. Never holds the full payload in memory.
     """
+    # Validate Content-Type so non-XML payloads are rejected before reading
+    # the body. STEP sends application/xml; some proxies use text/xml.
+    ct = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if ct and ct not in _XML_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported Media Type: expected application/xml or text/xml, got '{ct}'",
+        )
     os.makedirs(INGEST_SPOOL_DIR, exist_ok=True)
     sha = hashlib.sha256()
     total = 0

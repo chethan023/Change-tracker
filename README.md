@@ -18,6 +18,8 @@ This repository is the current state of the build. **The backend is complete. Th
 | Backend | Celery worker task | ✅ Complete |
 | Backend | Notifier (email SMTP + Slack webhook) | ✅ Complete |
 | Backend | JWT auth + 10-user cap + admin bootstrap | ✅ Complete |
+| Backend | Forgot password + token revocation + refresh + admin reset | ✅ Complete (2026-04-25) |
+| Backend | Admin-editable client config (`PATCH /api/v1/config`) | ✅ Complete (2026-04-25) |
 | **Frontend** | Vite + TypeScript + Tailwind scaffold | ✅ Complete |
 | Frontend | Nginx Dockerfile with API proxy | ✅ Complete |
 | Frontend | Editorial design system (IBM Plex, masthead) | ✅ Complete |
@@ -204,6 +206,43 @@ To see change-records populate:
 1. POST the sample (creates baseline — all rows inserted as `PRODUCT_CREATED`, `ASSET_LINKED`, etc.)
 2. Edit the sample (change a value, add a reference, rename the product)
 3. POST again — the diff engine will emit `ATTRIBUTE_VALUE`, `REFERENCE_ADDED`, `PRODUCT_NAME_CHANGED` records with both `current_value` and `previous_value` populated
+
+---
+
+## Local development (no Docker)
+
+If you'd rather run the API and tests directly on the host:
+
+```bash
+# Backend
+cd backend
+python -m venv venv
+source venv/Scripts/activate         # Windows-bash; on POSIX use venv/bin/activate
+pip install -r requirements.txt
+cp ../client.env.example ../client.env  # then fill in BOOTSTRAP_* + secrets
+alembic upgrade head
+uvicorn app.main:app --reload --port 8000
+```
+
+```bash
+# Frontend
+cd frontend
+npm install
+npm run dev      # Vite on http://localhost:5173
+```
+
+### Running the test suite
+
+```bash
+cd backend
+source venv/Scripts/activate
+python -m pytest                     # 53 tests, ~1 min
+python -m pytest tests/test_auth.py  # auth-only — login, tokens, forgot-pw, refresh
+```
+
+The test conftest spins up a fresh in-memory SQLite per test and resets
+the in-process login rate-limit bucket so tests can log in repeatedly
+without hitting the 10/min cap.
 
 ---
 

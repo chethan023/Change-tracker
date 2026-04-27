@@ -82,6 +82,16 @@ def _auth_headers(client, email: str, password: str) -> dict:
     return {"Authorization": f"Bearer {res.json()['access_token']}"}
 
 
+@pytest.fixture(autouse=True)
+def _reset_login_rate_limit():
+    """The login rate-limit bucket is module-level state and would otherwise
+    leak across tests, causing spurious 429s in suites that log in often."""
+    from app.routers.auth import _attempts
+    _attempts.clear()
+    yield
+    _attempts.clear()
+
+
 @pytest.fixture
 def admin_headers(client, seed_users):
     return _auth_headers(client, "admin@example.com", "AdminPw1!")

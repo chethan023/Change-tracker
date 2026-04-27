@@ -10,13 +10,6 @@ export function changeTypeVariant(t: ChangeElementType): "add" | "remove" | "mod
   return "modify";
 }
 
-export const variantClasses: Record<string, string> = {
-  add:    "border-sage text-sage bg-sage-50",
-  remove: "border-rose text-rose bg-rose-50",
-  modify: "border-amber text-amber-900 bg-amber-50",
-  move:   "border-brand text-brand bg-brand-50",
-};
-
 // Backend emits naive UTC timestamps (no "Z" suffix). parseISO would treat
 // those as local time, so append "Z" when no timezone is present.
 function asUtc(iso: string): string {

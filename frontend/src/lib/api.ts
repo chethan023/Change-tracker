@@ -17,13 +17,18 @@ api.interceptors.request.use((cfg) => {
   return cfg;
 });
 
+// Routes that are reachable without a session — never bounce them to /login.
+const PUBLIC_PATHS = new Set([
+  "/login", "/forgot-password", "/reset-password",
+]);
+
 // Redirect on 401 (not authed) or 403 password_change_required
 api.interceptors.response.use(
   (r) => r,
   (err) => {
     const status = err.response?.status;
     const detail = err.response?.data?.detail;
-    if (status === 401 && !location.pathname.endsWith("/login")) {
+    if (status === 401 && !PUBLIC_PATHS.has(location.pathname)) {
       localStorage.removeItem("ct_token");
       location.href = "/login";
     } else if (
@@ -50,9 +55,69 @@ export async function changePassword(current_password: string, new_password: str
   await api.post("/auth/change-password", { current_password, new_password });
 }
 
+export async function forgotPassword(email: string): Promise<{ message: string; reset_url?: string | null }> {
+  const { data } = await api.post("/auth/forgot-password", { email });
+  return data;
+}
+
+export async function resetPassword(token: string, new_password: string) {
+  await api.post("/auth/reset-password", { token, new_password });
+}
+
+export async function logout() {
+  // Server-side revocation. Errors are swallowed so local state is always cleared.
+  try { await api.post("/auth/logout"); } catch { /* noop */ }
+}
+
 export async function fetchConfig(): Promise<ClientConfig> {
   const { data } = await api.get("/config");
   return data;
+}
+
+export async function updateConfig(body: Partial<ClientConfig>): Promise<ClientConfig> {
+  // Try PATCH first; fall back to PUT if a proxy/gateway in front of the
+  // API blocks PATCH (manifests as a 405 Method Not Allowed in the UI).
+  try {
+    const { data } = await api.patch("/config", body);
+    return data;
+  } catch (err: any) {
+    if (err?.response?.status === 405) {
+      const { data } = await api.put("/config", body);
+      return data;
+    }
+    throw err;
+  }
+}
+
+export async function fetchSecurityPolicies(): Promise<import("./types").SecurityPolicies> {
+  const { data } = await api.get("/admin/policies");
+  return data;
+}
+
+export async function fetchIngestCredentials(): Promise<import("./types").IngestCredentials> {
+  const { data } = await api.get("/admin/ingest-credentials");
+  return data;
+}
+
+export async function rotateIngestCredentials(): Promise<import("./types").IngestCredentials> {
+  const { data } = await api.post("/admin/ingest-credentials/rotate");
+  return data;
+}
+
+export async function runRetention(body: {
+  change_records_days?: number;
+  raw_xml_days?: number;
+}): Promise<import("./types").RetentionRunResult> {
+  const { data } = await api.post("/admin/retention/run", body);
+  return data;
+}
+
+export async function resetAllChanges(): Promise<void> {
+  // Backend requires X-Confirm header — we set it explicitly so a client
+  // can't fire-and-forget; accidental calls without the header 400.
+  await api.post("/admin/reset-changes", {}, {
+    headers: { "X-Confirm": "DELETE-ALL-CHANGES" },
+  });
 }
 
 export async function fetchChanges(

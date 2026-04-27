@@ -1,12 +1,22 @@
-import { FormEvent, useState } from "react";
+/**
+ * Users — admin-only management screen.
+ *
+ * Rebuilt against the design tokens (no Tailwind editorial classes). Uses
+ * `.card`, `.input`, `.btn-*`, `.badge` from `design/kit.css` and the
+ * existing chrome primitives so theme + density propagate automatically.
+ */
+import { FormEvent, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2, KeyRound, UserPlus, X, Check } from "lucide-react";
 import {
   fetchUsers, createUser, updateUser, deleteUser, resetUserPassword,
 } from "../lib/api";
 import type { User, UserRole } from "../lib/types";
 import { useAuth } from "../lib/auth";
-import { cn, relTime } from "../lib/utils";
+import { relTime } from "../lib/utils";
+import {
+  Masthead, Icon, Avatar, StatCard, IconButton,
+} from "../ui/primitives";
+import { toast } from "../ui/toast";
 
 const ROLES: UserRole[] = ["admin", "editor", "viewer"];
 
@@ -15,7 +25,8 @@ export default function Users() {
   const me = useAuth();
   const [showCreate, setShowCreate] = useState(false);
   const [resettingId, setResettingId] = useState<number | null>(null);
-  const [banner, setBanner] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"all" | UserRole>("all");
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["users"],
@@ -24,142 +35,171 @@ export default function Users() {
 
   const updateRole = useMutation({
     mutationFn: ({ id, role }: { id: number; role: string }) => updateUser(id, { role }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      toast({ tone: "success", title: "Role updated" });
+    },
   });
 
   const toggleActive = useMutation({
     mutationFn: ({ id, active }: { id: number; active: boolean }) => updateUser(id, { active }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      toast({ tone: "success", title: vars.active ? "User enabled" : "User disabled" });
+    },
   });
 
   const remove = useMutation({
     mutationFn: (id: number) => deleteUser(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      toast({ tone: "success", title: "User deleted" });
+    },
   });
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return users.filter((u) => {
+      if (roleFilter !== "all" && u.role !== roleFilter) return false;
+      if (!q) return true;
+      return (
+        u.email.toLowerCase().includes(q) ||
+        (u.role || "").toLowerCase().includes(q)
+      );
+    });
+  }, [users, query, roleFilter]);
+
+  const counts = useMemo(() => ({
+    total: users.length,
+    admins: users.filter((u) => u.role === "admin").length,
+    pending: users.filter((u) => u.must_change_password).length,
+  }), [users]);
+
   return (
-    <>
-      <section className="mb-6 flex items-end justify-between border-b-2 border-ink pb-4">
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-ink/50 dark:text-ink/60">
-            administration
-          </p>
-          <h1 className="font-serif text-4xl font-semibold text-ink leading-none mt-1">
-            User Management
-          </h1>
-        </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 bg-ink text-paper font-mono text-xs uppercase tracking-widest px-4 py-2 hover:bg-brand transition"
+    <div className="fade-in">
+      <Masthead
+        eyebrow="Configure"
+        title="Users"
+        subtitle="Invite teammates, assign roles, and reset passwords."
+        actions={
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => setShowCreate(true)}
+          >
+            <Icon name="user-plus" size={14} /> Create user
+          </button>
+        }
+      />
+
+      {/* Stat cards */}
+      <div className="stat-grid" style={{ marginBottom: 22 }}>
+        <StatCard label="Total users" value={counts.total} />
+        <StatCard label="Admins"       value={counts.admins} />
+        <StatCard label="Awaiting first login" value={counts.pending} />
+      </div>
+
+      {/* Filter bar */}
+      <div
+        style={{
+          display: "flex", gap: 12, alignItems: "center",
+          marginBottom: 14,
+        }}
+      >
+        <div
+          style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "0 12px",
+            background: "var(--bg-elevated)",
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+            flex: 1, maxWidth: 460,
+          }}
         >
-          <UserPlus size={14} /> New user
-        </button>
-      </section>
-
-      {banner && (
-        <div className="mb-4 border-l-2 border-sage bg-sage-50 px-3 py-2 font-mono text-xs text-sage flex items-center justify-between">
-          <span>{banner}</span>
-          <button onClick={() => setBanner(null)}><X size={14} /></button>
+          <Icon name="search" size={14} color="var(--fg-tertiary)" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by email or role…"
+            className="input-bare"
+          />
         </div>
-      )}
+        <select
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value as any)}
+          className="input input-sm"
+          style={{ width: 160, fontSize: 13 }}
+        >
+          <option value="all">All roles</option>
+          {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--fg-tertiary)" }}>
+          {filtered.length} of {users.length}
+        </span>
+      </div>
 
-      {isLoading ? (
-        <div className="font-mono text-xs text-ink/60">Loading users…</div>
-      ) : (
-        <div className="bg-surface border-2 border-ink shadow-sharp overflow-x-auto">
-          <table className="w-full font-mono text-xs">
-            <thead className="bg-ink/5 border-b border-ink/10 text-ink/60 dark:text-ink/70 uppercase tracking-wider text-[10px]">
-              <tr>
-                <Th>Email</Th>
+      {/* Table */}
+      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%", minWidth: 720, borderCollapse: "collapse",
+              fontSize: 13,
+            }}
+          >
+            <thead>
+              <tr
+                style={{
+                  background: "var(--bg-subtle)",
+                  borderBottom: "1px solid var(--border-subtle)",
+                }}
+              >
+                <Th>User</Th>
                 <Th>Role</Th>
                 <Th>Status</Th>
-                <Th>Must Change PW</Th>
                 <Th>Last login</Th>
-                <Th className="text-right">Actions</Th>
+                <Th align="right">Actions</Th>
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => (
-                <tr key={u.id} className="border-t border-ink/10 hover:bg-ink/5">
-                  <Td>
-                    <span className="text-ink">{u.email}</span>
-                    {u.id === me.userId && (
-                      <span className="ml-2 text-[10px] text-amber-900 dark:text-amber">(you)</span>
-                    )}
-                  </Td>
-                  <Td>
-                    <select
-                      value={u.role}
-                      disabled={u.id === me.userId}
-                      onChange={(e) => updateRole.mutate({ id: u.id, role: e.target.value })}
-                      className="bg-transparent text-ink border border-ink/20 px-2 py-1 font-mono text-xs disabled:opacity-50"
-                    >
-                      {ROLES.map((r) => (
-                        <option key={r} value={r} className="bg-surface text-ink">{r}</option>
-                      ))}
-                    </select>
-                  </Td>
-                  <Td>
-                    <button
-                      disabled={u.id === me.userId}
-                      onClick={() => toggleActive.mutate({ id: u.id, active: !u.active })}
-                      className={cn(
-                        "px-2 py-1 border font-mono text-[10px] uppercase tracking-wider",
-                        u.active
-                          ? "border-sage text-sage"
-                          : "border-ink/30 text-ink/50",
-                        "disabled:opacity-50"
-                      )}
-                    >
-                      {u.active ? "active" : "disabled"}
-                    </button>
-                  </Td>
-                  <Td>
-                    {u.must_change_password ? (
-                      <span className="text-amber-900 dark:text-amber">yes</span>
-                    ) : (
-                      <span className="text-ink/40">no</span>
-                    )}
-                  </Td>
-                  <Td className="text-ink/70">
-                    {u.last_login ? relTime(u.last_login) : "never"}
-                  </Td>
-                  <Td className="text-right">
-                    <button
-                      onClick={() => setResettingId(u.id)}
-                      className="inline-flex items-center gap-1 text-ink/60 hover:text-ink px-2"
-                      title="Reset password"
-                    >
-                      <KeyRound size={12} /> reset
-                    </button>
-                    <button
-                      disabled={u.id === me.userId}
-                      onClick={() => {
-                        if (confirm(`Delete ${u.email}? This cannot be undone.`)) {
-                          remove.mutate(u.id);
-                        }
-                      }}
-                      className="inline-flex items-center gap-1 text-rose hover:text-rose-900 px-2 disabled:opacity-30"
-                      title="Delete user"
-                    >
-                      <Trash2 size={12} /> delete
-                    </button>
-                  </Td>
-                </tr>
-              ))}
-              {users.length === 0 && (
-                <tr><Td colSpan={6} className="text-center text-ink/50 py-6">No users</Td></tr>
+              {isLoading && (
+                <tr><Td colSpan={5} center muted>Loading users…</Td></tr>
               )}
+              {!isLoading && filtered.length === 0 && (
+                <tr><Td colSpan={5} center muted>No users match this filter.</Td></tr>
+              )}
+              {filtered.map((u, i) => (
+                <UserRow
+                  key={u.id}
+                  u={u}
+                  isMe={u.id === me.userId}
+                  isLast={i === filtered.length - 1}
+                  onRoleChange={(role) => updateRole.mutate({ id: u.id, role })}
+                  onReset={() => setResettingId(u.id)}
+                  onToggleActive={() =>
+                    toggleActive.mutate({ id: u.id, active: !u.active })
+                  }
+                  onDelete={() => {
+                    if (window.confirm(`Delete ${u.email}? This cannot be undone.`)) {
+                      remove.mutate(u.id);
+                    }
+                  }}
+                />
+              ))}
             </tbody>
           </table>
         </div>
-      )}
+      </div>
 
       {showCreate && (
         <CreateUserModal
           onClose={() => setShowCreate(false)}
           onCreated={(email) => {
-            setBanner(`User ${email} created. They'll be required to change password on first login.`);
+            toast({
+              tone: "success",
+              title: `${email} created`,
+              body: "They'll be required to change password on first login.",
+            });
             qc.invalidateQueries({ queryKey: ["users"] });
             setShowCreate(false);
           }}
@@ -172,21 +212,285 @@ export default function Users() {
           userEmail={users.find((u) => u.id === resettingId)?.email || ""}
           onClose={() => setResettingId(null)}
           onReset={(email) => {
-            setBanner(`Password reset for ${email}. They'll be required to change it on next login.`);
+            toast({
+              tone: "success",
+              title: `Password reset for ${email}`,
+              body: "They'll be required to change it on next login.",
+            });
             qc.invalidateQueries({ queryKey: ["users"] });
             setResettingId(null);
           }}
         />
       )}
-    </>
+    </div>
   );
 }
 
-function Th({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <th className={cn("text-left px-4 py-2", className)}>{children}</th>;
+// ── Row ──────────────────────────────────────────────────────────────
+
+function UserRow({
+  u, isMe, isLast, onRoleChange, onReset, onToggleActive, onDelete,
+}: {
+  u: User;
+  isMe: boolean;
+  isLast: boolean;
+  onRoleChange: (role: string) => void;
+  onReset: () => void;
+  onToggleActive: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <tr
+      className="row-hover"
+      style={{ borderBottom: isLast ? "none" : "1px solid var(--border-subtle)" }}
+    >
+      <Td>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Avatar userId={u.email} size={28} />
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontWeight: 600, color: "var(--fg)",
+                display: "flex", alignItems: "center", gap: 6,
+              }}
+            >
+              {u.email}
+              {isMe && <YouChip />}
+            </div>
+          </div>
+        </div>
+      </Td>
+      <Td>
+        <select
+          value={u.role}
+          disabled={isMe}
+          onChange={(e) => onRoleChange(e.target.value)}
+          className="input input-sm"
+          style={{
+            width: 130, fontSize: 12.5, padding: "6px 10px",
+            opacity: isMe ? 0.55 : 1, cursor: isMe ? "not-allowed" : "pointer",
+          }}
+          title={isMe ? "You can't change your own role" : undefined}
+        >
+          {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+      </Td>
+      <Td>
+        <StatusBadge user={u} />
+      </Td>
+      <Td>
+        <span style={{ color: "var(--fg-tertiary)" }}>
+          {u.last_login ? relTime(u.last_login) : "never"}
+        </span>
+      </Td>
+      <Td align="right">
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <IconButton
+            icon="key-round"
+            title="Reset password"
+            onClick={onReset}
+          />
+          <IconButton
+            icon={u.active ? "user-x" : "user-check"}
+            title={
+              isMe
+                ? "You can't disable yourself"
+                : u.active ? "Disable user" : "Enable user"
+            }
+            onClick={onToggleActive}
+            disabled={isMe}
+          />
+          <IconButton
+            icon="trash-2"
+            title={isMe ? "You can't delete yourself" : "Delete user"}
+            onClick={onDelete}
+            disabled={isMe}
+          />
+        </div>
+      </Td>
+    </tr>
+  );
 }
-function Td({ children, className, colSpan }: { children: React.ReactNode; className?: string; colSpan?: number }) {
-  return <td colSpan={colSpan} className={cn("px-4 py-3", className)}>{children}</td>;
+
+function StatusBadge({ user }: { user: User }) {
+  if (!user.active) {
+    return (
+      <span className="badge" style={{ background: "var(--bg-muted)", color: "var(--fg-secondary)" }}>
+        <span className="badge-dot" style={{ background: "var(--fg-quaternary)" }} />
+        Disabled
+      </span>
+    );
+  }
+  if (user.must_change_password) {
+    return (
+      <span className="badge" style={{ background: "var(--warning-soft)", color: "var(--warning-fg)" }}>
+        <span className="badge-dot" style={{ background: "var(--warning)" }} />
+        Awaiting first login
+      </span>
+    );
+  }
+  return (
+    <span className="badge" style={{ background: "var(--success-soft)", color: "var(--success-fg)" }}>
+      <span className="badge-dot" style={{ background: "var(--success)" }} />
+      Active
+    </span>
+  );
+}
+
+function YouChip() {
+  return (
+    <span
+      style={{
+        fontSize: 9.5, fontWeight: 700, letterSpacing: "0.06em",
+        textTransform: "uppercase",
+        color: "var(--accent)", background: "var(--accent-soft)",
+        padding: "2px 6px", borderRadius: 4,
+      }}
+    >
+      You
+    </span>
+  );
+}
+
+// ── Table cells ──────────────────────────────────────────────────────
+
+function Th({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "right" }) {
+  return (
+    <th
+      style={{
+        textAlign: align,
+        padding: "12px 16px",
+        fontSize: 11, fontWeight: 600,
+        textTransform: "uppercase", letterSpacing: "0.06em",
+        color: "var(--fg-tertiary)",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </th>
+  );
+}
+
+function Td({
+  children, colSpan, align = "left", center, muted,
+}: {
+  children: React.ReactNode;
+  colSpan?: number;
+  align?: "left" | "right";
+  center?: boolean;
+  muted?: boolean;
+}) {
+  return (
+    <td
+      colSpan={colSpan}
+      style={{
+        textAlign: center ? "center" : align,
+        padding: "12px 16px",
+        verticalAlign: "middle",
+        color: muted ? "var(--fg-tertiary)" : "var(--fg)",
+      }}
+    >
+      {children}
+    </td>
+  );
+}
+
+// ── Modals ───────────────────────────────────────────────────────────
+
+function ModalShell({
+  title, onClose, children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: "fixed", inset: 0, zIndex: 60,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 24,
+        background: "rgba(0,0,0,0.4)",
+        backdropFilter: "blur(8px)",
+      }}
+    >
+      <div
+        className="card"
+        style={{
+          width: "100%", maxWidth: 460,
+          background: "var(--bg-elevated)",
+          boxShadow: "var(--shadow-lg)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "16px 20px",
+            borderBottom: "1px solid var(--border-subtle)",
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "var(--fg)" }}>
+            {title}
+          </h2>
+          <IconButton icon="x" title="Close" onClick={onClose} />
+        </div>
+        <div style={{ padding: 20 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function ModalField({
+  label, hint, children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label style={{ display: "block", marginBottom: 14 }}>
+      <span
+        style={{
+          display: "block", marginBottom: 6,
+          fontSize: 11.5, fontWeight: 600,
+          textTransform: "uppercase", letterSpacing: "0.04em",
+          color: "var(--fg-secondary)",
+        }}
+      >
+        {label}
+      </span>
+      {children}
+      {hint && (
+        <span
+          style={{
+            display: "block", marginTop: 6,
+            fontSize: 11.5, color: "var(--fg-tertiary)", lineHeight: 1.5,
+          }}
+        >
+          {hint}
+        </span>
+      )}
+    </label>
+  );
+}
+
+function ModalError({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        padding: "8px 12px",
+        background: "var(--danger-soft)", color: "var(--danger-fg)",
+        borderRadius: 8, fontSize: 12.5,
+        marginBottom: 12,
+        display: "flex", alignItems: "center", gap: 6,
+      }}
+    >
+      <Icon name="alert-circle" size={13} /> {children}
+    </div>
+  );
 }
 
 function CreateUserModal({
@@ -221,39 +525,45 @@ function CreateUserModal({
 
   return (
     <ModalShell title="Create user" onClose={onClose}>
-      <form onSubmit={submit} className="space-y-5">
+      <form onSubmit={submit}>
         <ModalField label="Email">
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-            required className="w-full border-b-2 border-ink/20 focus:border-ink outline-none py-2 bg-transparent text-ink font-mono" />
+          <input
+            className="input"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required autoFocus
+            placeholder="name@example.com"
+          />
         </ModalField>
-        <ModalField label="Temporary password (min 12 chars)">
-          <input type="text" value={password} onChange={(e) => setPassword(e.target.value)}
-            required className="w-full border-b-2 border-ink/20 focus:border-ink outline-none py-2 bg-transparent text-ink font-mono" />
-          <p className="mt-1 font-mono text-[10px] text-ink/50 dark:text-ink/60">
-            Share with user securely — they will be forced to change on first login.
-          </p>
+        <ModalField
+          label="Temporary password (min 12 chars)"
+          hint="Share with the user securely — they'll be forced to change on first login."
+        >
+          <input
+            className="input mono"
+            type="text"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required minLength={12}
+          />
         </ModalField>
         <ModalField label="Role">
-          <select value={role} onChange={(e) => setRole(e.target.value as UserRole)}
-            className="w-full border border-ink/20 px-3 py-2 bg-transparent text-ink font-mono">
-            {ROLES.map((r) => (
-              <option key={r} value={r} className="bg-surface text-ink">{r}</option>
-            ))}
+          <select
+            className="input"
+            value={role}
+            onChange={(e) => setRole(e.target.value as UserRole)}
+          >
+            {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
         </ModalField>
-        {err && (
-          <div className="border-l-2 border-rose px-3 py-2 bg-rose-50 font-mono text-xs text-rose">
-            {err}
-          </div>
-        )}
-        <div className="flex justify-end gap-3">
-          <button type="button" onClick={onClose}
-            className="font-mono text-xs uppercase tracking-widest text-ink/60 hover:text-ink px-3">
+        {err && <ModalError>{err}</ModalError>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" disabled={busy}
-            className="bg-ink text-paper font-mono text-xs uppercase tracking-widest px-4 py-2 hover:bg-brand disabled:opacity-50 inline-flex items-center gap-2">
-            <Check size={12} /> {busy ? "Creating…" : "Create"}
+          <button type="submit" className="btn btn-primary btn-sm" disabled={busy}>
+            {busy ? "Creating…" : "Create user"}
           </button>
         </div>
       </form>
@@ -264,7 +574,8 @@ function CreateUserModal({
 function ResetPasswordModal({
   userId, userEmail, onClose, onReset,
 }: {
-  userId: number; userEmail: string;
+  userId: number;
+  userEmail: string;
   onClose: () => void;
   onReset: (email: string) => void;
 }) {
@@ -275,7 +586,10 @@ function ResetPasswordModal({
   async function submit(e: FormEvent) {
     e.preventDefault();
     setErr(null);
-    if (pw.length < 12) { setErr("Password must be at least 12 characters."); return; }
+    if (pw.length < 12) {
+      setErr("Password must be at least 12 characters.");
+      return;
+    }
     setBusy(true);
     try {
       await resetUserPassword(userId, pw);
@@ -289,57 +603,29 @@ function ResetPasswordModal({
 
   return (
     <ModalShell title={`Reset password — ${userEmail}`} onClose={onClose}>
-      <form onSubmit={submit} className="space-y-5">
-        <ModalField label="New temporary password (min 12 chars)">
-          <input type="text" value={pw} onChange={(e) => setPw(e.target.value)}
-            required className="w-full border-b-2 border-ink/20 focus:border-ink outline-none py-2 bg-transparent text-ink font-mono" />
-          <p className="mt-1 font-mono text-[10px] text-ink/50 dark:text-ink/60">
-            The user will be required to change it on next login.
-          </p>
+      <form onSubmit={submit}>
+        <ModalField
+          label="New temporary password (min 12 chars)"
+          hint="The user will be required to change it on next login."
+        >
+          <input
+            className="input mono"
+            type="text"
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+            required minLength={12} autoFocus
+          />
         </ModalField>
-        {err && (
-          <div className="border-l-2 border-rose px-3 py-2 bg-rose-50 font-mono text-xs text-rose">
-            {err}
-          </div>
-        )}
-        <div className="flex justify-end gap-3">
-          <button type="button" onClick={onClose}
-            className="font-mono text-xs uppercase tracking-widest text-ink/60 hover:text-ink px-3">
+        {err && <ModalError>{err}</ModalError>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" disabled={busy}
-            className="bg-ink text-paper font-mono text-xs uppercase tracking-widest px-4 py-2 hover:bg-brand disabled:opacity-50">
+          <button type="submit" className="btn btn-primary btn-sm" disabled={busy}>
             {busy ? "Resetting…" : "Reset password"}
           </button>
         </div>
       </form>
     </ModalShell>
-  );
-}
-
-function ModalShell({
-  title, onClose, children,
-}: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-ink/40 dark:bg-black/70">
-      <div className="w-full max-w-md bg-surface border-2 border-ink shadow-sharp">
-        <div className="flex items-center justify-between border-b border-ink/10 px-5 py-3">
-          <h2 className="font-serif text-xl text-ink">{title}</h2>
-          <button onClick={onClose} className="text-ink/50 hover:text-ink"><X size={16} /></button>
-        </div>
-        <div className="p-5">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function ModalField({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink/60 dark:text-ink/70 block mb-2">
-        {label}
-      </label>
-      {children}
-    </div>
   );
 }

@@ -1,6 +1,17 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, Check, Mail, MessageSquare, Plus, Trash2, X } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import {
+  Masthead,
+  Icon,
+  IconButton,
+  StatCard,
+  Field,
+  Segmented,
+  EmptyState,
+  absTime,
+} from "../ui/primitives";
+import { toast } from "../ui/toast";
 import {
   createNotificationRule,
   deleteNotificationRule,
@@ -8,27 +19,22 @@ import {
   fetchNotificationRules,
 } from "../lib/api";
 import type { NotificationRule } from "../lib/types";
-import { absTime, cn } from "../lib/utils";
 
-// ── Change-type grouping ─────────────────────────────────────────
-// Grouped for the multi-select so the user sees semantically-related types
-// together (create / update / delete / reference / classification / …).
 const CHANGE_TYPE_GROUPS: { label: string; types: string[] }[] = [
   {
-    label: "create",
+    label: "Create",
     types: ["PRODUCT_CREATED", "REFERENCE_ADDED", "ASSET_LINKED", "CLASSIFICATION_LINKED", "CONTAINER_ADDED"],
   },
   {
-    label: "update",
+    label: "Update",
     types: ["PRODUCT_RECLASSIFIED", "PRODUCT_TYPE_CHANGED", "PRODUCT_NAME_CHANGED", "ATTRIBUTE_VALUE", "MULTIVALUE_CHANGED", "CONTAINER_VALUE"],
   },
   {
-    label: "delete",
+    label: "Delete",
     types: ["PRODUCT_DELETED", "REFERENCE_REMOVED", "REFERENCE_SUPPRESSED", "ASSET_UNLINKED", "ASSET_SUPPRESSED", "CLASSIFICATION_UNLINKED", "CONTAINER_REMOVED"],
   },
 ];
 
-// Types where attribute_id / qualifier_id are meaningful on a ChangeRecord.
 const TYPES_WITH_ATTRIBUTE = new Set([
   "ATTRIBUTE_VALUE",
   "MULTIVALUE_CHANGED",
@@ -69,32 +75,27 @@ const EMPTY_FORM: RuleForm = {
 
 export default function Notifications() {
   const qc = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const [showForm, setShowForm] = useState(params.get("new") === "1");
+  const [form, setForm] = useState<RuleForm>(EMPTY_FORM);
+  const [err, setErr] = useState<string | null>(null);
+
   const { data: rules } = useQuery({
     queryKey: ["notifications"],
     queryFn: fetchNotificationRules,
   });
 
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<RuleForm>(EMPTY_FORM);
-  const [err, setErr] = useState<string | null>(null);
-
-  // Dependent filter options — refetched whenever the selected change types change.
   const { data: options } = useQuery({
     queryKey: ["notification-filter-options", form.change_element_types],
     queryFn: () => fetchNotificationFilterOptions(form.change_element_types),
   });
 
-  // Usability: when the user narrows change types, drop any selected
-  // attribute/qualifier/ref/target values that are no longer applicable.
-  // Only prune against a *non-empty* option list — an empty list means
-  // "nothing observed yet in history", not "nothing is valid", so we must
-  // not wipe user-entered values in that case.
   useEffect(() => {
     if (!options) return;
     setForm((f) => {
       const next = { ...f };
       const prune = (key: keyof RuleForm, allowed: string[]) => {
-        if (allowed.length === 0) return; // no authoritative list — keep as-is
+        if (allowed.length === 0) return;
         const current = f[key] as string[];
         const kept = current.filter((v) => allowed.includes(v));
         if (kept.length !== current.length) (next as any)[key] = kept;
@@ -120,21 +121,34 @@ export default function Notifications() {
     mutationFn: createNotificationRule,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["notifications"] });
-      setShowForm(false);
-      setForm(EMPTY_FORM);
+      closeForm();
+      toast({ tone: "success", title: "Rule created" });
     },
     onError: (e: any) => setErr(e.response?.data?.detail || "Failed to create rule"),
   });
 
   const deleteMut = useMutation({
     mutationFn: deleteNotificationRule,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+      toast({ tone: "success", title: "Rule deleted" });
+    },
   });
+
+  const closeForm = () => {
+    setShowForm(false);
+    setForm(EMPTY_FORM);
+    setErr(null);
+    if (params.get("new")) {
+      params.delete("new");
+      setParams(params, { replace: true });
+    }
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setErr(null);
-    const payload: Partial<NotificationRule> = {
+    createMut.mutate({
       rule_name: form.rule_name,
       notify_channel: form.notify_channel,
       notify_target: form.notify_target,
@@ -143,284 +157,173 @@ export default function Notifications() {
       qualifier_ids: form.qualifier_ids.length ? form.qualifier_ids : null,
       ref_types: form.ref_types.length ? form.ref_types : null,
       target_ids: form.target_ids.length ? form.target_ids : null,
-    };
-    createMut.mutate(payload);
+    } as Partial<NotificationRule>);
   };
 
   const activeRules = rules || [];
+  const active = activeRules.filter((r) => r.active).length;
 
   return (
-    <>
-      {/* ── Headline ────────────────────────────────────────── */}
-      <section className="mb-6 flex items-end justify-between border-b-2 border-ink pb-4">
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-ink/50">
-            dispatch
-          </p>
-          <h1 className="font-serif text-4xl font-semibold text-ink leading-none mt-1">
-            Alert Rules
-          </h1>
-        </div>
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2 border-2 border-ink font-mono text-[10px] uppercase tracking-widest transition",
-            showForm
-              ? "bg-ink text-paper"
-              : "bg-surface hover:bg-ink hover:text-paper shadow-sharp hover:shadow-none hover:translate-x-1 hover:translate-y-1"
-          )}
-        >
-          <Plus size={12} />
-          {showForm ? "cancel" : "new rule"}
-        </button>
-      </section>
+    <div className="fade-in">
+      <Masthead
+        eyebrow="Dispatch"
+        title="Alert rules"
+        subtitle="Rules fire on every ingest. Pick one or more change types — dependent fields narrow to matching values."
+        actions={
+          <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+            <Icon name="plus" size={14} /> New rule
+          </button>
+        }
+      />
 
-      <p className="font-serif text-base text-ink/70 italic mb-6 max-w-2xl">
-        Rules fire on every ingest. Pick one or more change types — the
-        attribute, reference, and qualifier lists are then filtered to only
-        the values valid for that selection. Fields that don't apply to the
-        chosen types are disabled.
-      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 20 }}>
+        <StatCard label="Total rules" value={activeRules.length} />
+        <StatCard label="Active" value={active} tone="up" />
+        <StatCard label="Channels" value={new Set(activeRules.map((r) => r.notify_channel)).size} />
+      </div>
 
-      {/* ── Create form ─────────────────────────────────────── */}
-      {showForm && (
-        <form
-          onSubmit={submit}
-          className="bg-surface border-2 border-ink shadow-sharp p-6 mb-6 grid grid-cols-1 md:grid-cols-2 gap-6"
-        >
-          <div className="md:col-span-2">
-            <Label>Rule name</Label>
-            <Input
-              value={form.rule_name}
-              onChange={(v) => setForm({ ...form, rule_name: v })}
-              placeholder="e.g. Alert me on any DoP compliance change"
-              required
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            <Label>Change types</Label>
-            <GroupedMultiSelect
-              groups={CHANGE_TYPE_GROUPS}
-              selected={form.change_element_types}
-              onChange={(v) => setForm({ ...form, change_element_types: v })}
-              placeholder="any change type"
-            />
-          </div>
-
-          <div>
-            <Label>Attributes</Label>
-            <MultiSelect
-              options={options?.attribute_ids || []}
-              selected={form.attribute_ids}
-              onChange={(v) => setForm({ ...form, attribute_ids: v })}
-              placeholder="any attribute"
-              disabledReason={
-                !typeRelevance.attr
-                  ? "not applicable for selected change types"
-                  : null
-              }
-            />
-          </div>
-          <div>
-            <Label>Qualifiers</Label>
-            <MultiSelect
-              options={options?.qualifier_ids || []}
-              selected={form.qualifier_ids}
-              onChange={(v) => setForm({ ...form, qualifier_ids: v })}
-              placeholder="any qualifier"
-              disabledReason={
-                !typeRelevance.attr
-                  ? "not applicable for selected change types"
-                  : null
-              }
-            />
-          </div>
-
-          <div>
-            <Label>Reference types</Label>
-            <MultiSelect
-              options={options?.ref_types || []}
-              selected={form.ref_types}
-              onChange={(v) => setForm({ ...form, ref_types: v })}
-              placeholder="any reference type"
-              disabledReason={
-                !typeRelevance.ref
-                  ? "not applicable for selected change types"
-                  : null
-              }
-            />
-          </div>
-          <div>
-            <Label>Target IDs</Label>
-            <MultiSelect
-              options={options?.target_ids || []}
-              selected={form.target_ids}
-              onChange={(v) => setForm({ ...form, target_ids: v })}
-              placeholder="any target"
-              disabledReason={
-                !typeRelevance.ref
-                  ? "not applicable for selected change types"
-                  : null
-              }
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            <Label>Channel</Label>
-            <div className="flex gap-2">
-              {(["email", "slack"] as const).map((ch) => (
-                <button
-                  key={ch}
-                  type="button"
-                  onClick={() => setForm({ ...form, notify_channel: ch })}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-2 px-3 py-2 border-2 font-mono text-xs uppercase tracking-wider transition",
-                    form.notify_channel === ch
-                      ? "border-ink bg-ink text-paper"
-                      : "border-ink/20 text-ink/60 hover:border-ink"
-                  )}
-                >
-                  {ch === "email" ? <Mail size={12} /> : <MessageSquare size={12} />}
-                  {ch}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="md:col-span-2">
-            <Label>
-              {form.notify_channel === "email" ? "Email address" : "Slack webhook URL"}
-            </Label>
-            <Input
-              type={form.notify_channel === "email" ? "email" : "url"}
-              value={form.notify_target}
-              onChange={(v) => setForm({ ...form, notify_target: v })}
-              placeholder={
-                form.notify_channel === "email"
-                  ? "alerts@example.com"
-                  : "https://hooks.slack.com/services/…"
-              }
-              required
-            />
-          </div>
-          {err && (
-            <div className="md:col-span-2 border-l-2 border-rose px-3 py-2 bg-rose-50 font-mono text-xs text-rose">
-              {err}
-            </div>
-          )}
-          <div className="md:col-span-2 flex justify-end">
-            <button
-              type="submit"
-              disabled={createMut.isPending}
-              className="bg-ink text-paper font-mono text-xs uppercase tracking-widest px-6 py-2.5 hover:bg-brand transition disabled:opacity-50"
-            >
-              {createMut.isPending ? "creating…" : "create rule →"}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* ── Rules list ──────────────────────────────────────── */}
       {activeRules.length === 0 ? (
-        <div className="bg-surface border-2 border-ink shadow-sharp p-16 text-center">
-          <Bell size={32} className="mx-auto text-ink/20 mb-3" />
-          <p className="font-serif text-xl text-ink/60 italic">
-            No rules configured.
-          </p>
-          <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-ink/40">
-            create one above to start receiving alerts
-          </p>
-        </div>
+        <EmptyState
+          icon="bell"
+          title="No rules configured"
+          body="Create one to start receiving alerts on STEP changes."
+        />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+            gap: 14,
+          }}
+        >
           {activeRules.map((r) => (
-            <RuleCard
-              key={r.id}
-              rule={r}
-              onDelete={() => deleteMut.mutate(r.id)}
-            />
+            <RuleCard key={r.id} rule={r} onDelete={() => deleteMut.mutate(r.id)} />
           ))}
         </div>
       )}
-    </>
+
+      {showForm && (
+        <RuleBuilder
+          form={form}
+          setForm={setForm}
+          options={options}
+          typeRelevance={typeRelevance}
+          onSubmit={submit}
+          onClose={closeForm}
+          pending={createMut.isPending}
+          error={err}
+        />
+      )}
+    </div>
   );
 }
 
-// ── RuleCard ──────────────────────────────────────────────────────
-function ruleValues(rule: NotificationRule, key: "change_element_types" | "attribute_ids" | "qualifier_ids"): string[] {
+function ruleValues(
+  rule: NotificationRule,
+  key: "change_element_types" | "attribute_ids" | "qualifier_ids"
+): string[] {
   const list = (rule[key] as string[] | null | undefined) || [];
   if (list.length) return list;
-  // Fall back to legacy scalar fields
   const scalarKey =
-    key === "change_element_types" ? "change_element_type" :
-    key === "attribute_ids" ? "attribute_id" : "qualifier_id";
+    key === "change_element_types"
+      ? "change_element_type"
+      : key === "attribute_ids"
+      ? "attribute_id"
+      : "qualifier_id";
   const s = rule[scalarKey as keyof NotificationRule] as string | null | undefined;
   return s ? [s] : [];
 }
 
 function RuleCard({ rule, onDelete }: { rule: NotificationRule; onDelete: () => void }) {
-  const Icon = rule.notify_channel === "email" ? Mail : MessageSquare;
   const types = ruleValues(rule, "change_element_types");
   const attrs = ruleValues(rule, "attribute_ids");
   const quals = ruleValues(rule, "qualifier_ids");
   const refs = rule.ref_types || [];
   const targets = rule.target_ids || [];
+  const channelIcon = rule.notify_channel === "email" ? "mail" : "message-square";
 
   return (
-    <article className="bg-surface border-2 border-ink shadow-sharp p-5 group relative">
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <span className="flex items-center gap-1.5 px-2 py-0.5 border border-ink/20 font-mono text-[10px] uppercase tracking-wider text-ink/70">
-            <Icon size={10} />
-            {rule.notify_channel}
-          </span>
-          {rule.active && (
-            <span className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-sage">
-              <span className="h-1.5 w-1.5 bg-sage rounded-full pulse-dot" />
-              active
-            </span>
-          )}
-        </div>
-        <button
-          onClick={onDelete}
-          className="text-ink/30 hover:text-rose transition opacity-0 group-hover:opacity-100"
-          aria-label="Delete rule"
+    <article className="card" style={{ padding: 18, position: "relative" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 10,
+        }}
+      >
+        <span
+          className="badge"
+          style={{ background: "var(--bg-muted)", color: "var(--fg-secondary)" }}
         >
-          <Trash2 size={14} />
-        </button>
+          <Icon name={channelIcon} size={11} />
+          {rule.notify_channel}
+        </span>
+        {rule.active && (
+          <span
+            className="badge"
+            style={{ background: "var(--success-soft)", color: "var(--success-fg)" }}
+          >
+            <span className="badge-dot" style={{ background: "var(--success)" }} />
+            active
+          </span>
+        )}
+        <div style={{ flex: 1 }} />
+        <IconButton icon="trash-2" onClick={onDelete} />
       </div>
 
-      <h3 className="font-serif text-xl text-ink leading-tight mb-3">
+      <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "var(--fg)" }}>
         {rule.rule_name}
       </h3>
-
-      <div className="space-y-2 mb-3">
-        <ChipRow label="dispatch" values={[rule.notify_target]} />
-        <ChipRow label="types" values={types.length ? types : ["any"]} />
-        <ChipRow label="attrs" values={attrs.length ? attrs : ["any"]} />
-        <ChipRow label="quals" values={quals.length ? quals : ["any"]} />
-        {refs.length > 0 && <ChipRow label="refs" values={refs} />}
-        {targets.length > 0 && <ChipRow label="targets" values={targets} />}
+      <div
+        className="mono"
+        style={{ fontSize: 12, color: "var(--fg-tertiary)", marginTop: 4, wordBreak: "break-all" }}
+      >
+        → {rule.notify_target}
       </div>
 
-      <p className="font-mono text-[10px] uppercase tracking-wider text-ink/40">
-        created {absTime(rule.created_at)}
-      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
+        <ChipRow label="Types" values={types.length ? types : ["any"]} muted={types.length === 0} />
+        <ChipRow label="Attrs" values={attrs.length ? attrs : ["any"]} muted={attrs.length === 0} />
+        <ChipRow label="Quals" values={quals.length ? quals : ["any"]} muted={quals.length === 0} />
+        {refs.length > 0 && <ChipRow label="Refs" values={refs} />}
+        {targets.length > 0 && <ChipRow label="Targets" values={targets} />}
+      </div>
+
+      <div
+        style={{
+          marginTop: 12,
+          paddingTop: 10,
+          borderTop: "1px solid var(--border-subtle)",
+          fontSize: 11,
+          color: "var(--fg-tertiary)",
+        }}
+      >
+        Created {absTime(rule.created_at)}
+      </div>
     </article>
   );
 }
 
-function ChipRow({ label, values }: { label: string; values: string[] }) {
+function ChipRow({ label, values, muted }: { label: string; values: string[]; muted?: boolean }) {
   return (
-    <div className="flex gap-2">
-      <span className="font-mono text-[10px] uppercase tracking-wider text-ink/40 w-16 flex-shrink-0 pt-1">
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+      <span className="label-sm" style={{ width: 60, flexShrink: 0, paddingTop: 3 }}>
         {label}
       </span>
-      <div className="flex flex-wrap gap-1">
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
         {values.map((v, i) => (
           <span
             key={`${v}-${i}`}
-            className="font-mono text-[11px] text-ink border border-ink/20 px-1.5 py-0.5"
+            className="mono"
+            style={{
+              fontSize: 11,
+              border: "1px solid var(--border-subtle)",
+              borderRadius: 6,
+              padding: "1px 6px",
+              color: muted ? "var(--fg-quaternary)" : "var(--fg-secondary)",
+              background: "var(--bg-elevated)",
+            }}
           >
             {v}
           </span>
@@ -430,106 +333,337 @@ function ChipRow({ label, values }: { label: string; values: string[] }) {
   );
 }
 
-// ── Form building blocks ───────────────────────────────────────────
-function Label({ children }: { children: React.ReactNode }) {
-  return (
-    <label className="block font-mono text-[10px] uppercase tracking-[0.2em] text-ink/60 mb-2">
-      {children}
-    </label>
-  );
-}
+/* ── Builder modal ─────────────────────────────────────────── */
 
-function Input({
-  value, onChange, placeholder, type = "text", required,
+function RuleBuilder({
+  form,
+  setForm,
+  options,
+  typeRelevance,
+  onSubmit,
+  onClose,
+  pending,
+  error,
 }: {
-  value: string; onChange: (v: string) => void;
-  placeholder?: string; type?: string; required?: boolean;
+  form: RuleForm;
+  setForm: (f: RuleForm) => void;
+  options: any;
+  typeRelevance: { attr: boolean; ref: boolean };
+  onSubmit: (e: FormEvent) => void;
+  onClose: () => void;
+  pending: boolean;
+  error: string | null;
 }) {
+  const [step, setStep] = useState<"match" | "scope" | "deliver">("match");
+  const stepIdx = step === "match" ? 1 : step === "scope" ? 2 : 3;
+  const nextStep = () => setStep(step === "match" ? "scope" : "deliver");
+  const prevStep = () => setStep(step === "deliver" ? "scope" : "match");
+
   return (
-    <input
-      type={type}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      required={required}
-      className="w-full border-b-2 border-ink/20 focus:border-ink outline-none py-1.5 font-mono text-sm bg-transparent placeholder:text-ink/30 text-ink"
-    />
+    <div className="modal-backdrop" onClick={onClose}>
+      <form
+        className="card"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={onSubmit}
+        style={{
+          width: "100%",
+          maxWidth: 760,
+          boxShadow: "var(--shadow-lg)",
+          animation: "modal-in 280ms var(--ease-spring)",
+          display: "flex",
+          flexDirection: "column",
+          maxHeight: "88vh",
+        }}
+      >
+        <div
+          style={{
+            padding: "18px 22px",
+            borderBottom: "1px solid var(--border-subtle)",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <div style={{ flex: 1 }}>
+            <div className="label-sm">Step {stepIdx} of 3</div>
+            <h3 style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 600 }}>
+              {step === "match" ? "What to match" : step === "scope" ? "Narrow the scope" : "Where to send"}
+            </h3>
+          </div>
+          <Segmented
+            value={step}
+            onChange={setStep}
+            options={[
+              { value: "match", label: "Match" },
+              { value: "scope", label: "Scope" },
+              { value: "deliver", label: "Deliver" },
+            ]}
+          />
+          <IconButton icon="x" onClick={onClose} />
+        </div>
+
+        <div style={{ padding: 22, overflow: "auto", flex: 1 }}>
+          {step === "match" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+              <Field label="Rule name">
+                <input
+                  className="input"
+                  value={form.rule_name}
+                  onChange={(e) => setForm({ ...form, rule_name: e.target.value })}
+                  placeholder="e.g. Alert me on any compliance change"
+                  required
+                />
+              </Field>
+              <Field label="Change types">
+                <div style={{ fontSize: 12, color: "var(--fg-tertiary)", marginBottom: 8 }}>
+                  Leave empty to match every type.
+                </div>
+                <GroupedPicker
+                  groups={CHANGE_TYPE_GROUPS}
+                  selected={form.change_element_types}
+                  onChange={(v) => setForm({ ...form, change_element_types: v })}
+                />
+              </Field>
+            </div>
+          )}
+
+          {step === "scope" && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
+              <Field label="Attributes">
+                <Picker
+                  options={options?.attribute_ids || []}
+                  selected={form.attribute_ids}
+                  onChange={(v) => setForm({ ...form, attribute_ids: v })}
+                  disabled={!typeRelevance.attr}
+                  disabledReason="not applicable"
+                  placeholder="Any attribute"
+                />
+              </Field>
+              <Field label="Qualifiers">
+                <Picker
+                  options={options?.qualifier_ids || []}
+                  selected={form.qualifier_ids}
+                  onChange={(v) => setForm({ ...form, qualifier_ids: v })}
+                  disabled={!typeRelevance.attr}
+                  disabledReason="not applicable"
+                  placeholder="Any qualifier"
+                />
+              </Field>
+              <Field label="Reference types">
+                <Picker
+                  options={options?.ref_types || []}
+                  selected={form.ref_types}
+                  onChange={(v) => setForm({ ...form, ref_types: v })}
+                  disabled={!typeRelevance.ref}
+                  disabledReason="not applicable"
+                  placeholder="Any reference type"
+                />
+              </Field>
+              <Field label="Target IDs">
+                <Picker
+                  options={options?.target_ids || []}
+                  selected={form.target_ids}
+                  onChange={(v) => setForm({ ...form, target_ids: v })}
+                  disabled={!typeRelevance.ref}
+                  disabledReason="not applicable"
+                  placeholder="Any target"
+                />
+              </Field>
+            </div>
+          )}
+
+          {step === "deliver" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+              <Field label="Channel">
+                <Segmented
+                  value={form.notify_channel}
+                  onChange={(v) => setForm({ ...form, notify_channel: v })}
+                  options={[
+                    { value: "email", label: "Email", icon: "mail" },
+                    { value: "slack", label: "Slack", icon: "message-square" },
+                  ]}
+                />
+              </Field>
+              <Field
+                label={form.notify_channel === "email" ? "Email address" : "Slack webhook URL"}
+              >
+                <input
+                  className="input"
+                  type={form.notify_channel === "email" ? "email" : "url"}
+                  value={form.notify_target}
+                  onChange={(e) => setForm({ ...form, notify_target: e.target.value })}
+                  placeholder={
+                    form.notify_channel === "email"
+                      ? "alerts@example.com"
+                      : "https://hooks.slack.com/services/…"
+                  }
+                  required
+                />
+              </Field>
+            </div>
+          )}
+
+          {error && (
+            <div
+              style={{
+                marginTop: 16,
+                padding: 12,
+                borderRadius: 8,
+                background: "var(--danger-soft)",
+                color: "var(--danger-fg)",
+                fontSize: 13,
+              }}
+            >
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div
+          style={{
+            padding: "14px 22px",
+            borderTop: "1px solid var(--border-subtle)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <div style={{ flex: 1 }} />
+          {stepIdx > 1 && (
+            <button type="button" className="btn btn-secondary" onClick={prevStep}>
+              <Icon name="arrow-left" size={14} /> Back
+            </button>
+          )}
+          {stepIdx < 3 ? (
+            <button type="button" className="btn btn-primary" onClick={nextStep}>
+              Next <Icon name="arrow-right" size={14} />
+            </button>
+          ) : (
+            <button type="submit" className="btn btn-primary" disabled={pending}>
+              {pending ? "Creating…" : "Create rule"}
+            </button>
+          )}
+        </div>
+      </form>
+    </div>
   );
 }
 
-// ── Multi-select: strict pick-from-list, values filtered by backend
-// based on the currently selected change types. Disabled when the field
-// doesn't apply to the selected types (e.g. attribute picker for a
-// reference-only rule). No free-text entry.
-function MultiSelect({
-  options, selected, onChange, placeholder, disabledReason,
+/* ── Pickers ───────────────────────────────────────────────── */
+
+function Picker({
+  options,
+  selected,
+  onChange,
+  placeholder,
+  disabled,
+  disabledReason,
 }: {
   options: string[];
   selected: string[];
   onChange: (v: string[]) => void;
   placeholder?: string;
-  disabledReason?: string | null;
+  disabled?: boolean;
+  disabledReason?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-
-  const toggle = (v: string) => {
-    onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v]);
-  };
-
-  const remove = (v: string) => onChange(selected.filter((x) => x !== v));
-
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return q ? options.filter((o) => o.toLowerCase().includes(q)) : options;
   }, [options, query]);
 
-  const disabled = Boolean(disabledReason);
+  const toggle = (v: string) =>
+    onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v]);
+  const remove = (v: string) => onChange(selected.filter((x) => x !== v));
 
   return (
-    <div className="relative">
+    <div style={{ position: "relative" }}>
       <button
         type="button"
         onClick={() => !disabled && setOpen((o) => !o)}
         disabled={disabled}
-        className={cn(
-          "w-full flex items-center flex-wrap gap-1 min-h-[36px] border-b-2 border-ink/20 focus:border-ink py-1.5 font-mono text-sm text-left",
-          disabled && "opacity-50 cursor-not-allowed"
-        )}
+        style={{
+          width: "100%",
+          minHeight: 40,
+          border: "1px solid var(--border)",
+          borderRadius: 10,
+          background: disabled ? "var(--bg-muted)" : "var(--bg-elevated)",
+          padding: "6px 10px",
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: 4,
+          cursor: disabled ? "not-allowed" : "pointer",
+          opacity: disabled ? 0.55 : 1,
+          textAlign: "left",
+          fontSize: 13,
+          color: "var(--fg)",
+        }}
       >
         {selected.length === 0 ? (
-          <span className="text-ink/40">
-            {disabledReason || placeholder || "select…"}
+          <span style={{ color: "var(--fg-quaternary)" }}>
+            {disabled ? disabledReason : placeholder}
           </span>
         ) : (
           selected.map((v) => (
             <span
               key={v}
-              className="inline-flex items-center gap-1 bg-ink text-paper px-1.5 py-0.5 text-[11px]"
-              onClick={(e) => { e.stopPropagation(); remove(v); }}
+              className="chip"
+              onClick={(e) => {
+                e.stopPropagation();
+                remove(v);
+              }}
             >
               {v}
-              <X size={10} />
+              <Icon name="x" size={11} />
             </span>
           ))
         )}
+        <div style={{ flex: 1 }} />
+        <Icon name="chevron-down" size={14} color="var(--fg-tertiary)" />
       </button>
 
       {open && !disabled && (
-        <div className="absolute z-20 mt-1 w-full max-h-64 overflow-auto bg-paper border-2 border-ink shadow-sharp">
-          <div className="sticky top-0 bg-paper border-b border-ink/10 p-1.5">
+        <div
+          style={{
+            position: "absolute",
+            zIndex: 20,
+            top: "calc(100% + 4px)",
+            left: 0,
+            right: 0,
+            maxHeight: 280,
+            overflow: "auto",
+            background: "var(--bg-elevated)",
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+            boxShadow: "var(--shadow-md)",
+          }}
+        >
+          <div
+            style={{
+              position: "sticky",
+              top: 0,
+              background: "var(--bg-elevated)",
+              padding: 8,
+              borderBottom: "1px solid var(--border-subtle)",
+            }}
+          >
             <input
               autoFocus
+              className="input"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="filter…"
-              className="w-full px-2 py-1 bg-transparent font-mono text-xs text-ink outline-none"
+              placeholder="Filter…"
+              style={{ fontSize: 12, padding: "4px 10px" }}
             />
           </div>
-
           {filtered.length === 0 ? (
-            <div className="px-3 py-2 font-mono text-xs text-ink/40">
-              {options.length === 0 ? "no values available" : "no matches"}
+            <div style={{ padding: 16, fontSize: 12, color: "var(--fg-tertiary)" }}>
+              {options.length === 0 ? "No values available" : "No matches"}
             </div>
           ) : (
             filtered.map((o) => {
@@ -539,36 +673,65 @@ function MultiSelect({
                   type="button"
                   key={o}
                   onClick={() => toggle(o)}
-                  className={cn(
-                    "flex items-center w-full gap-2 px-3 py-1.5 font-mono text-xs text-left hover:bg-surface text-ink",
-                    on && "bg-surface"
-                  )}
+                  style={{
+                    display: "flex",
+                    width: "100%",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "8px 12px",
+                    fontSize: 12.5,
+                    background: on ? "var(--accent-soft)" : "transparent",
+                    border: "none",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    color: "var(--fg)",
+                  }}
                 >
-                  <span className={cn(
-                    "w-3 h-3 border border-ink flex items-center justify-center",
-                    on && "bg-ink text-paper"
-                  )}>
-                    {on && <Check size={8} />}
+                  <span
+                    style={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: 4,
+                      border: "1px solid var(--border)",
+                      background: on ? "var(--accent)" : "transparent",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {on && <Icon name="check" size={10} color="#fff" />}
                   </span>
-                  <span className="truncate">{o}</span>
+                  <span className="mono" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {o}
+                  </span>
                 </button>
               );
             })
           )}
-          <div className="sticky bottom-0 bg-paper border-t border-ink/10 flex justify-between p-1.5">
+          <div
+            style={{
+              position: "sticky",
+              bottom: 0,
+              background: "var(--bg-elevated)",
+              borderTop: "1px solid var(--border-subtle)",
+              padding: 8,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
             <button
               type="button"
+              className="btn btn-ghost btn-sm"
               onClick={() => onChange([])}
-              className="font-mono text-[10px] uppercase tracking-wider text-ink/50 hover:text-ink"
             >
-              clear
+              Clear
             </button>
             <button
               type="button"
+              className="btn btn-secondary btn-sm"
               onClick={() => setOpen(false)}
-              className="font-mono text-[10px] uppercase tracking-wider text-ink/50 hover:text-ink"
             >
-              done
+              Done
             </button>
           </div>
         </div>
@@ -577,110 +740,120 @@ function MultiSelect({
   );
 }
 
-// Grouped multi-select (for change types) — group header + per-group toggle.
-function GroupedMultiSelect({
-  groups, selected, onChange, placeholder,
+function GroupedPicker({
+  groups,
+  selected,
+  onChange,
 }: {
   groups: { label: string; types: string[] }[];
   selected: string[];
   onChange: (v: string[]) => void;
-  placeholder?: string;
 }) {
-  const [open, setOpen] = useState(false);
-
-  const toggle = (v: string) => {
+  const toggle = (v: string) =>
     onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v]);
-  };
   const toggleGroup = (types: string[]) => {
     const allOn = types.every((t) => selected.includes(t));
     if (allOn) onChange(selected.filter((x) => !types.includes(x)));
     else onChange(Array.from(new Set([...selected, ...types])));
   };
-  const remove = (v: string) => onChange(selected.filter((x) => x !== v));
 
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center flex-wrap gap-1 min-h-[36px] border-b-2 border-ink/20 focus:border-ink py-1.5 font-mono text-sm text-left"
-      >
-        {selected.length === 0 ? (
-          <span className="text-ink/40">{placeholder || "select…"}</span>
-        ) : (
-          selected.map((v) => (
-            <span
-              key={v}
-              className="inline-flex items-center gap-1 bg-ink text-paper px-1.5 py-0.5 text-[11px]"
-              onClick={(e) => { e.stopPropagation(); remove(v); }}
+    <div
+      style={{
+        border: "1px solid var(--border)",
+        borderRadius: 10,
+        overflow: "hidden",
+        background: "var(--bg-elevated)",
+      }}
+    >
+      {groups.map((g, gi) => {
+        const allOn = g.types.every((t) => selected.includes(t));
+        const someOn = g.types.some((t) => selected.includes(t));
+        return (
+          <div
+            key={g.label}
+            style={{
+              borderTop: gi === 0 ? "none" : "1px solid var(--border-subtle)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "8px 12px",
+                background: "var(--bg-muted)",
+              }}
             >
-              {v}
-              <X size={10} />
-            </span>
-          ))
-        )}
-      </button>
-
-      {open && (
-        <div className="absolute z-20 mt-1 w-full max-h-80 overflow-auto bg-paper border-2 border-ink shadow-sharp">
-          {groups.map((g) => {
-            const allOn = g.types.every((t) => selected.includes(t));
-            const someOn = g.types.some((t) => selected.includes(t));
-            return (
-              <div key={g.label}>
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(g.types)}
-                  className="flex items-center justify-between w-full px-3 py-1.5 bg-surface border-b border-ink/10 font-mono text-[10px] uppercase tracking-wider text-ink/70 hover:text-ink"
-                >
-                  <span>{g.label}</span>
-                  <span className="text-ink/40">
-                    {allOn ? "all selected" : someOn ? "partial" : "select all"}
-                  </span>
-                </button>
-                {g.types.map((t) => {
-                  const on = selected.includes(t);
-                  return (
-                    <button
-                      type="button"
-                      key={t}
-                      onClick={() => toggle(t)}
-                      className={cn(
-                        "flex items-center w-full gap-2 px-4 py-1.5 font-mono text-xs text-left hover:bg-surface text-ink",
-                        on && "bg-surface"
-                      )}
+              <span className="label-sm">{g.label}</span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => toggleGroup(g.types)}
+              >
+                {allOn ? "Unselect all" : someOn ? "Select rest" : "Select all"}
+              </button>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, 1fr)",
+                gap: 0,
+              }}
+            >
+              {g.types.map((t) => {
+                const on = selected.includes(t);
+                return (
+                  <button
+                    type="button"
+                    key={t}
+                    onClick={() => toggle(t)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "8px 12px",
+                      background: on ? "var(--accent-soft)" : "transparent",
+                      border: "none",
+                      borderTop: "1px solid var(--border-subtle)",
+                      textAlign: "left",
+                      cursor: "pointer",
+                      fontSize: 12,
+                      color: "var(--fg)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 14,
+                        height: 14,
+                        borderRadius: 4,
+                        border: "1px solid var(--border)",
+                        background: on ? "var(--accent)" : "transparent",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
                     >
-                      <span className={cn(
-                        "w-3 h-3 border border-ink flex items-center justify-center",
-                        on && "bg-ink text-paper"
-                      )}>
-                        {on && <Check size={8} />}
-                      </span>
-                      <span className="truncate">{t}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })}
-          <div className="sticky bottom-0 bg-paper border-t border-ink/10 flex justify-between p-1.5">
-            <button
-              type="button"
-              onClick={() => onChange([])}
-              className="font-mono text-[10px] uppercase tracking-wider text-ink/50 hover:text-ink"
-            >
-              clear
-            </button>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="font-mono text-[10px] uppercase tracking-wider text-ink/50 hover:text-ink"
-            >
-              done
-            </button>
+                      {on && <Icon name="check" size={10} color="#fff" />}
+                    </span>
+                    <span
+                      className="mono"
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {t}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })}
     </div>
   );
 }

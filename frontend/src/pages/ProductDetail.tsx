@@ -1,13 +1,19 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, History, Filter } from "lucide-react";
+import {
+  Masthead,
+  Icon,
+  IconButton,
+  StatCard,
+  EmptyState,
+  Segmented,
+  Switch,
+  absTime,
+  relTime,
+} from "../ui/primitives";
 import { fetchProduct, fetchProductTimeline } from "../lib/api";
 import type { ChangeRecord, ProductAttributeRow } from "../lib/types";
-import {
-  Card, Select, Spinner, Skeleton, EmptyState, ErrorState, Modal, Button,
-} from "../components/ui";
-import { absTime } from "../lib/utils";
 
 const ALL = "__all__";
 
@@ -15,7 +21,7 @@ export default function ProductDetail() {
   const { id = "" } = useParams();
   const productId = decodeURIComponent(id);
 
-  const { data, isLoading, error, refetch } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["product", productId],
     queryFn: () => fetchProduct(productId),
     enabled: !!productId,
@@ -23,383 +29,552 @@ export default function ProductDetail() {
 
   const [selectedAttr, setSelectedAttr] = useState<ProductAttributeRow | null>(null);
   const [qualifierFilter, setQualifierFilter] = useState<string>(ALL);
-  const [changedOnly, setChangedOnly] = useState(false);
+  const [changedOnly, setChangedOnly] = useState<boolean>(false);
 
-  const { globalAttrs, qualifiedAttrs, qualifiers, visibleQualified, visibleGlobal } = useMemo(() => {
-    const attrs = data?.attributes ?? [];
-    const globalAttrs = attrs.filter((a) => !a.qualifier_id);
-    const qualifiedAttrs = attrs.filter((a) => !!a.qualifier_id);
-    const qualifiers = Array.from(
-      new Set(qualifiedAttrs.map((a) => a.qualifier_id as string))
-    ).sort();
+  const { globalAttrs, qualifiedAttrs, qualifiers, visibleQualified, visibleGlobal } =
+    useMemo(() => {
+      const attrs = data?.attributes ?? [];
+      const globalAttrs = attrs.filter((a) => !a.qualifier_id);
+      const qualifiedAttrs = attrs.filter((a) => !!a.qualifier_id);
+      const qualifiers = Array.from(
+        new Set(qualifiedAttrs.map((a) => a.qualifier_id as string))
+      ).sort();
 
-    const matchesQualifier = (a: ProductAttributeRow) =>
-      qualifierFilter === ALL ? true : a.qualifier_id === qualifierFilter;
-    const matchesChanged = (a: ProductAttributeRow) =>
-      changedOnly ? a.change_count > 0 : true;
+      const matchQ = (a: ProductAttributeRow) =>
+        qualifierFilter === ALL ? true : a.qualifier_id === qualifierFilter;
+      const matchC = (a: ProductAttributeRow) =>
+        changedOnly ? a.change_count > 0 : true;
 
-    return {
-      globalAttrs,
-      qualifiedAttrs,
-      qualifiers,
-      visibleQualified: qualifiedAttrs.filter((a) => matchesQualifier(a) && matchesChanged(a)),
-      visibleGlobal: globalAttrs.filter(matchesChanged),
-    };
-  }, [data, qualifierFilter, changedOnly]);
+      return {
+        globalAttrs,
+        qualifiedAttrs,
+        qualifiers,
+        visibleQualified: qualifiedAttrs.filter((a) => matchQ(a) && matchC(a)),
+        visibleGlobal: globalAttrs.filter(matchC),
+      };
+    }, [data, qualifierFilter, changedOnly]);
 
-  if (isLoading) return <ProductDetailSkeleton />;
+  if (isLoading) {
+    return (
+      <div className="card" style={{ padding: 48, textAlign: "center", color: "var(--fg-tertiary)" }}>
+        <span className="spinner" style={{ marginRight: 8 }} /> Loading product…
+      </div>
+    );
+  }
   if (error || !data) {
     return (
-      <ErrorState
+      <EmptyState
+        icon="alert-triangle"
         title="Product not found"
-        description={error instanceof Error ? error.message : "We couldn't load this product."}
-        onRetry={() => refetch()}
+        body={error instanceof Error ? error.message : "We couldn't load this product."}
       />
     );
   }
 
-  const names = data.names.filter((n) => n.name_text);
-  const primaryName = names[0]?.name_text || data.step_product_id;
+  const primaryName =
+    data.names.find((n) => n.name_text)?.name_text || data.step_product_id;
 
   return (
-    <>
+    <div className="fade-in">
       <Link
         to="/products"
-        className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-widest text-ink/60 hover:text-ink transition mb-4"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 12,
+          color: "var(--fg-tertiary)",
+          textDecoration: "none",
+          marginBottom: 12,
+        }}
       >
-        <ArrowLeft size={12} aria-hidden /> back to products
+        <Icon name="arrow-left" size={14} /> Back to products
       </Link>
 
-      <section className="mb-6 border-b-2 border-ink pb-4">
-        <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-ink/50">
-          product / {data.user_type_id || "unknown type"}
-        </p>
-        <h1 className="font-serif text-3xl md:text-4xl font-semibold text-ink leading-tight mt-1 break-words">
-          {primaryName}
-        </h1>
-        <dl className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 font-mono text-xs text-ink/60">
-          <div><dt className="sr-only">id</dt>id: <dd className="inline text-ink">{data.step_product_id}</dd></div>
-          {data.parent_id && (
-            <div><dt className="sr-only">parent</dt>parent: <dd className="inline text-ink">{data.parent_id}</dd></div>
-          )}
-          <div><dt className="sr-only">changes</dt>changes: <dd className="inline text-ink tabular-nums">{data.change_count.toLocaleString()}</dd></div>
-          {data.last_change_date && (
-            <div><dt className="sr-only">last change</dt>last: <dd className="inline text-ink">{absTime(data.last_change_date)}</dd></div>
-          )}
-        </dl>
-      </section>
+      <Masthead
+        eyebrow={`Product · ${data.user_type_id || "unknown type"}`}
+        title={primaryName}
+        subtitle={
+          <code className="mono" style={{ fontSize: 13 }}>
+            {data.step_product_id}
+            {data.parent_id ? ` · parent ${data.parent_id}` : ""}
+          </code>
+        }
+      />
 
-      {/* Filter bar — applies to attribute sections */}
-      <div className="mb-6 flex flex-wrap items-end gap-3 border-y border-ink/10 py-3">
-        <div className="inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-ink/50">
-          <Filter size={12} aria-hidden /> filter attributes
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 20 }}>
+        <StatCard label="Total changes" value={data.change_count.toLocaleString()} />
+        <StatCard label="Attributes" value={data.attributes.length} />
+        <StatCard
+          label="Last change"
+          value={data.last_change_date ? relTime(data.last_change_date) : "—"}
+        />
+      </div>
+
+      <div
+        className="card"
+        style={{
+          padding: 14,
+          marginBottom: 18,
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Icon name="filter" size={14} color="var(--fg-tertiary)" />
+          <span className="label-sm">Qualifier</span>
+          <select
+            value={qualifierFilter}
+            onChange={(e) => setQualifierFilter(e.target.value)}
+            style={{
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              background: "var(--bg-elevated)",
+              padding: "4px 10px",
+              fontSize: 13,
+              color: "var(--fg)",
+            }}
+          >
+            <option value={ALL}>All ({qualifiers.length})</option>
+            {qualifiers.map((q) => (
+              <option key={q} value={q}>
+                {q}
+              </option>
+            ))}
+          </select>
         </div>
-        <Select
-          label="Qualifier"
-          value={qualifierFilter}
-          onChange={(e) => setQualifierFilter(e.target.value)}
-          aria-label="Filter attributes by qualifier"
-        >
-          <option value={ALL}>all ({qualifiers.length})</option>
-          {qualifiers.map((q) => (
-            <option key={q} value={q}>{q}</option>
-          ))}
-        </Select>
-        <label className="inline-flex items-center gap-2 font-mono text-xs text-ink/70 cursor-pointer select-none pb-1">
-          <input
-            type="checkbox"
-            className="h-4 w-4 accent-brand"
-            checked={changedOnly}
-            onChange={(e) => setChangedOnly(e.target.checked)}
-          />
-          changed only
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+          <Switch on={changedOnly} onToggle={() => setChangedOnly((v) => !v)} />
+          <span style={{ fontSize: 13, color: "var(--fg-secondary)" }}>Changed only</span>
         </label>
         {(qualifierFilter !== ALL || changedOnly) && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => { setQualifierFilter(ALL); setChangedOnly(false); }}
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setQualifierFilter(ALL);
+              setChangedOnly(false);
+            }}
           >
-            clear
-          </Button>
+            Clear
+          </button>
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Attributes */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Global (qualifier-independent) attributes — always visible */}
-          <section aria-labelledby="global-attrs-h">
-            <h2 id="global-attrs-h" className="font-mono text-[10px] uppercase tracking-[0.3em] text-ink/50 mb-2">
-              Global Attributes · {visibleGlobal.length}
-              {changedOnly && (
-                <span className="ml-2 text-ink/40 normal-case tracking-normal">
-                  of {globalAttrs.length}
-                </span>
-              )}
-            </h2>
-            <div className="border-2 border-ink bg-surface shadow-sharp overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b-2 border-ink bg-ink/5">
-                    <Th>Attribute</Th>
-                    <Th>Value</Th>
-                    <Th className="text-right">Changes</Th>
-                    <Th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleGlobal.map((a, i) => (
-                    <AttrRow key={`g-${a.attribute_id}-${i}`} a={a} onClick={() => setSelectedAttr(a)} showQualifier={false} />
-                  ))}
-                </tbody>
-              </table>
-              {visibleGlobal.length === 0 && (
-                <EmptyState
-                  className="border-0 shadow-none"
-                  title={changedOnly ? "No changed global attributes" : "No global attributes"}
-                  description={changedOnly
-                    ? "Turn off the “changed only” filter to see all global attributes."
-                    : "This product has no qualifier-independent attributes."}
-                />
-              )}
-            </div>
-          </section>
-
-          {/* Qualified attributes — filter by qualifier */}
-          <section aria-labelledby="qualified-attrs-h">
-            <h2 id="qualified-attrs-h" className="font-mono text-[10px] uppercase tracking-[0.3em] text-ink/50 mb-2">
-              Qualified Attributes · {visibleQualified.length}
-              {(qualifierFilter !== ALL || changedOnly) && (
-                <span className="ml-2 text-ink/40 normal-case tracking-normal">
-                  of {qualifiedAttrs.length}
-                </span>
-              )}
-            </h2>
-            <div className="border-2 border-ink bg-surface shadow-sharp overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b-2 border-ink bg-ink/5">
-                    <Th>Attribute</Th>
-                    <Th>Qualifier</Th>
-                    <Th>Value</Th>
-                    <Th className="text-right">Changes</Th>
-                    <Th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleQualified.map((a, i) => (
-                    <AttrRow key={`q-${a.attribute_id}-${a.qualifier_id}-${i}`} a={a} onClick={() => setSelectedAttr(a)} showQualifier />
-                  ))}
-                </tbody>
-              </table>
-              {visibleQualified.length === 0 && (
-                <EmptyState
-                  className="border-0 shadow-none"
-                  title="No qualified attributes match"
-                  description={
-                    qualifierFilter !== ALL
-                      ? `No attributes for qualifier "${qualifierFilter}"${changedOnly ? " with recorded changes" : ""}.`
-                      : changedOnly
-                      ? "No qualified attributes have recorded changes."
-                      : "No qualified attributes recorded."
-                  }
-                />
-              )}
-            </div>
-          </section>
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <AttrSection
+            title="Global attributes"
+            count={visibleGlobal.length}
+            totalCount={globalAttrs.length}
+            showingAll={!changedOnly}
+            rows={visibleGlobal}
+            onSelect={setSelectedAttr}
+            showQualifier={false}
+            emptyBody={
+              changedOnly
+                ? "Turn off 'Changed only' to see all global attributes."
+                : "This product has no qualifier-independent attributes."
+            }
+          />
+          <AttrSection
+            title="Qualified attributes"
+            count={visibleQualified.length}
+            totalCount={qualifiedAttrs.length}
+            showingAll={qualifierFilter === ALL && !changedOnly}
+            rows={visibleQualified}
+            onSelect={setSelectedAttr}
+            showQualifier
+            emptyBody={
+              qualifierFilter !== ALL
+                ? `No attributes for qualifier "${qualifierFilter}".`
+                : "No qualified attributes recorded."
+            }
+          />
         </div>
 
-        {/* Sidebar: refs + classifications */}
-        <aside className="space-y-6">
-          <section aria-labelledby="refs-h">
-            <h2 id="refs-h" className="font-mono text-[10px] uppercase tracking-[0.3em] text-ink/50 mb-2">
+        <aside style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <section>
+            <div className="label-sm" style={{ marginBottom: 8 }}>
               References · {data.references.length}
-            </h2>
-            <Card padded={false} className="p-3 space-y-2 max-h-80 overflow-auto">
-              {data.references.map((r, i) => (
-                <div key={i} className="font-mono text-xs flex justify-between gap-2">
-                  <span className="text-ink/60">{r.ref_type}</span>
-                  <span className="truncate text-ink">{r.target_product_id}</span>
-                </div>
-              ))}
-              {data.references.length === 0 && (
-                <div className="font-mono text-xs text-ink/40">none.</div>
+            </div>
+            <div className="card" style={{ padding: 12, maxHeight: 300, overflow: "auto" }}>
+              {data.references.length === 0 ? (
+                <div style={{ fontSize: 12, color: "var(--fg-quaternary)" }}>None.</div>
+              ) : (
+                data.references.map((r, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      padding: "6px 0",
+                      borderBottom:
+                        i === data.references.length - 1
+                          ? "none"
+                          : "1px solid var(--border-subtle)",
+                      fontSize: 12,
+                    }}
+                  >
+                    <span style={{ color: "var(--fg-tertiary)" }}>{r.ref_type}</span>
+                    <code
+                      className="mono"
+                      style={{
+                        color: "var(--fg)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {r.target_product_id}
+                    </code>
+                  </div>
+                ))
               )}
-            </Card>
+            </div>
           </section>
 
-          <section aria-labelledby="cls-h">
-            <h2 id="cls-h" className="font-mono text-[10px] uppercase tracking-[0.3em] text-ink/50 mb-2">
+          <section>
+            <div className="label-sm" style={{ marginBottom: 8 }}>
               Classifications · {data.classifications.length}
-            </h2>
-            <Card padded={false} className="p-3 space-y-1 max-h-48 overflow-auto">
-              {data.classifications.map((c) => (
-                <div key={c} className="font-mono text-xs text-ink">{c}</div>
-              ))}
-              {data.classifications.length === 0 && (
-                <div className="font-mono text-xs text-ink/40">none.</div>
+            </div>
+            <div className="card" style={{ padding: 12, maxHeight: 220, overflow: "auto" }}>
+              {data.classifications.length === 0 ? (
+                <div style={{ fontSize: 12, color: "var(--fg-quaternary)" }}>None.</div>
+              ) : (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {data.classifications.map((c) => (
+                    <span
+                      key={c}
+                      className="badge"
+                      style={{ background: "var(--bg-muted)", color: "var(--fg-secondary)" }}
+                    >
+                      {c}
+                    </span>
+                  ))}
+                </div>
               )}
-            </Card>
+            </div>
           </section>
         </aside>
       </div>
 
-      <AttributeTimeline
-        open={!!selectedAttr}
-        productId={data.step_product_id}
-        attr={selectedAttr}
-        onClose={() => setSelectedAttr(null)}
-      />
-    </>
-  );
-}
-
-function ProductDetailSkeleton() {
-  return (
-    <div aria-busy="true" aria-live="polite">
-      <Skeleton className="h-3 w-24 mb-4" />
-      <Skeleton className="h-8 w-2/3 mb-2" />
-      <Skeleton className="h-3 w-1/2 mb-6" />
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-4">
-          <Skeleton className="h-40 w-full" />
-          <Skeleton className="h-60 w-full" />
-        </div>
-        <div className="space-y-4">
-          <Skeleton className="h-40 w-full" />
-          <Skeleton className="h-32 w-full" />
-        </div>
-      </div>
-      <div className="mt-4 flex items-center gap-2 text-ink/50 font-mono text-xs">
-        <Spinner /> loading product…
-      </div>
+      {selectedAttr && (
+        <AttributeTimeline
+          productId={data.step_product_id}
+          attr={selectedAttr}
+          onClose={() => setSelectedAttr(null)}
+        />
+      )}
     </div>
   );
 }
 
-function AttributeTimeline({
-  open, productId, attr, onClose,
+function AttrSection({
+  title,
+  count,
+  totalCount,
+  showingAll,
+  rows,
+  onSelect,
+  showQualifier,
+  emptyBody,
 }: {
-  open: boolean;
+  title: string;
+  count: number;
+  totalCount: number;
+  showingAll: boolean;
+  rows: ProductAttributeRow[];
+  onSelect: (a: ProductAttributeRow) => void;
+  showQualifier: boolean;
+  emptyBody: string;
+}) {
+  return (
+    <section>
+      <div
+        className="label-sm"
+        style={{ marginBottom: 8, display: "flex", alignItems: "baseline", gap: 8 }}
+      >
+        <span>{title} · {count}</span>
+        {!showingAll && (
+          <span style={{ color: "var(--fg-quaternary)", textTransform: "none", letterSpacing: 0 }}>
+            of {totalCount}
+          </span>
+        )}
+      </div>
+      {rows.length === 0 ? (
+        <EmptyState icon="search" title={`No ${title.toLowerCase()} match`} body={emptyBody} />
+      ) : (
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+         <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Attribute</th>
+                {showQualifier && <th>Qualifier</th>}
+                <th>Value</th>
+                <th style={{ textAlign: "right" }}>Changes</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((a, i) => (
+                <tr
+                  key={`${a.attribute_id}-${a.qualifier_id || ""}-${i}`}
+                  className="clickable"
+                  onClick={() => onSelect(a)}
+                >
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <code className="mono" style={{ fontSize: 12, color: "var(--fg)" }}>
+                        {a.attribute_id}
+                      </code>
+                      {a.kind === "multi" && (
+                        <span
+                          className="badge"
+                          style={{ background: "var(--bg-muted)", color: "var(--fg-secondary)" }}
+                        >
+                          multi
+                        </span>
+                      )}
+                      {a.change_count > 0 && (
+                        <span
+                          className="badge"
+                          style={{ background: "var(--warning-soft)", color: "var(--warning-fg)" }}
+                        >
+                          changed
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  {showQualifier && (
+                    <td>
+                      <code className="mono" style={{ fontSize: 12, color: "var(--fg-secondary)" }}>
+                        {a.qualifier_id || "—"}
+                      </code>
+                    </td>
+                  )}
+                  <td
+                    style={{
+                      maxWidth: "32ch",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 12,
+                    }}
+                    title={
+                      a.kind === "multi" ? JSON.stringify(a.values_json) : a.value_text || ""
+                    }
+                  >
+                    {a.kind === "multi"
+                      ? JSON.stringify(a.values_json)
+                      : a.value_text || (
+                          <span style={{ color: "var(--fg-quaternary)" }}>∅</span>
+                        )}
+                    {a.unit_id && (
+                      <span style={{ color: "var(--fg-tertiary)", marginLeft: 6 }}>
+                        {a.unit_id}
+                      </span>
+                    )}
+                  </td>
+                  <td className="tabular" style={{ textAlign: "right" }}>
+                    {a.change_count > 0 ? (
+                      <span style={{ fontWeight: 600, color: "var(--warning-fg)" }}>
+                        {a.change_count}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--fg-quaternary)" }}>0</span>
+                    )}
+                  </td>
+                  <td>
+                    <Icon name="history" size={13} color="var(--fg-tertiary)" />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+         </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AttributeTimeline({
+  productId,
+  attr,
+  onClose,
+}: {
   productId: string;
-  attr: ProductAttributeRow | null;
+  attr: ProductAttributeRow;
   onClose: () => void;
 }) {
+  const [view, setView] = useState<"list" | "raw">("list");
   const { data = [], isLoading } = useQuery({
     queryKey: ["product-timeline", productId],
     queryFn: () => fetchProductTimeline(productId),
-    enabled: open && !!productId,
+    enabled: !!productId,
   });
 
-  const rows = attr
-    ? data.filter(
-        (r: ChangeRecord) =>
-          r.attribute_id === attr.attribute_id &&
-          (attr.qualifier_id ? r.qualifier_id === attr.qualifier_id : true)
-      )
-    : [];
+  const rows = data.filter(
+    (r: ChangeRecord) =>
+      r.attribute_id === attr.attribute_id &&
+      (attr.qualifier_id ? r.qualifier_id === attr.qualifier_id : true)
+  );
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      size="lg"
-      title={attr?.attribute_id || "Audit trail"}
-      description={attr ? `${productId}${attr.qualifier_id ? ` · ${attr.qualifier_id}` : ""}` : undefined}
-    >
-      <div className="p-4 space-y-3">
-        {isLoading ? (
-          <div className="flex items-center gap-2 text-ink/60 font-mono text-xs">
-            <Spinner /> loading timeline…
-          </div>
-        ) : rows.length === 0 ? (
-          <EmptyState
-            title="No changes recorded"
-            description="This attribute has no change history in the current range."
-          />
-        ) : (
-          rows.map((r) => (
-            <div key={r.id} className="border border-ink/20 p-3 bg-paper/40">
-              <div className="flex justify-between font-mono text-[10px] uppercase tracking-widest text-ink/50">
-                <span>{r.change_element_type}</span>
-                <span>{absTime(r.change_date)}</span>
-              </div>
-              <div className="grid grid-cols-2 gap-3 mt-2 font-mono text-xs">
-                <div>
-                  <div className="text-ink/40 text-[10px] uppercase">previous</div>
-                  <div className="text-rose break-all">{r.previous_value || "∅"}</div>
-                </div>
-                <div>
-                  <div className="text-ink/40 text-[10px] uppercase">current</div>
-                  <div className="text-sage break-all">{r.current_value || "∅"}</div>
-                </div>
-              </div>
-              {r.changed_by && (
-                <div className="mt-2 font-mono text-[10px] text-ink/50">by {r.changed_by}</div>
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="card"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%",
+          maxWidth: 780,
+          boxShadow: "var(--shadow-lg)",
+          animation: "modal-in 280ms var(--ease-spring)",
+          maxHeight: "85vh",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <div
+          style={{
+            padding: "18px 22px",
+            borderBottom: "1px solid var(--border-subtle)",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="label-sm">Audit trail</div>
+            <div
+              className="mono"
+              style={{ fontSize: 15, color: "var(--fg)", marginTop: 2 }}
+            >
+              {attr.attribute_id}
+              {attr.qualifier_id && (
+                <span style={{ color: "var(--fg-tertiary)" }}> · {attr.qualifier_id}</span>
               )}
             </div>
-          ))
-        )}
+          </div>
+          <Segmented
+            value={view}
+            onChange={setView}
+            options={[
+              { value: "list", label: "List" },
+              { value: "raw", label: "Raw" },
+            ]}
+          />
+          <IconButton icon="x" onClick={onClose} />
+        </div>
+        <div style={{ padding: 18, overflow: "auto", flex: 1 }}>
+          {isLoading ? (
+            <div style={{ color: "var(--fg-tertiary)", fontSize: 13 }}>
+              <span className="spinner" style={{ marginRight: 8 }} /> Loading timeline…
+            </div>
+          ) : rows.length === 0 ? (
+            <EmptyState
+              icon="history"
+              title="No changes recorded"
+              body="This attribute has no change history."
+            />
+          ) : view === "raw" ? (
+            <pre
+              className="mono"
+              style={{
+                margin: 0,
+                fontSize: 11.5,
+                color: "var(--fg-secondary)",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {JSON.stringify(rows, null, 2)}
+            </pre>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {rows.map((r) => (
+                <div
+                  key={r.id}
+                  style={{
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: 10,
+                    padding: 12,
+                    background: "var(--bg-elevated)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontSize: 11,
+                      color: "var(--fg-tertiary)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                      marginBottom: 8,
+                    }}
+                  >
+                    <span>{r.change_element_type}</span>
+                    <span>{absTime(r.change_date)}</span>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div>
+                      <div className="label-sm" style={{ marginBottom: 4 }}>Previous</div>
+                      <code
+                        className="mono"
+                        style={{
+                          display: "block",
+                          background: "var(--diff-before-bg)",
+                          color: "var(--diff-before-fg)",
+                          borderLeft: "2px solid var(--diff-before-line)",
+                          padding: "6px 10px",
+                          borderRadius: 6,
+                          fontSize: 12,
+                          wordBreak: "break-all",
+                        }}
+                      >
+                        {r.previous_value || "∅"}
+                      </code>
+                    </div>
+                    <div>
+                      <div className="label-sm" style={{ marginBottom: 4 }}>Current</div>
+                      <code
+                        className="mono"
+                        style={{
+                          display: "block",
+                          background: "var(--diff-after-bg)",
+                          color: "var(--diff-after-fg)",
+                          borderLeft: "2px solid var(--diff-after-line)",
+                          padding: "6px 10px",
+                          borderRadius: 6,
+                          fontSize: 12,
+                          wordBreak: "break-all",
+                        }}
+                      >
+                        {r.current_value || "∅"}
+                      </code>
+                    </div>
+                  </div>
+                  {r.changed_by && (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        fontSize: 11,
+                        color: "var(--fg-tertiary)",
+                      }}
+                    >
+                      by <span className="mono">{r.changed_by}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
-    </Modal>
-  );
-}
-
-function Th({ children, className = "" }: { children?: React.ReactNode; className?: string }) {
-  return (
-    <th scope="col" className={`px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-ink/60 text-left ${className}`}>
-      {children}
-    </th>
-  );
-}
-
-function AttrRow({
-  a, onClick, showQualifier,
-}: {
-  a: ProductAttributeRow;
-  onClick: () => void;
-  showQualifier: boolean;
-}) {
-  return (
-    <tr
-      className="border-b border-ink/10 hover:bg-ink/5 transition cursor-pointer focus-within:bg-ink/5"
-      onClick={onClick}
-    >
-      <td className="px-3 py-2 font-mono text-xs text-ink">
-        <button
-          className="text-left hover:underline focus:outline-none"
-          onClick={(e) => { e.stopPropagation(); onClick(); }}
-          aria-label={`View audit trail for ${a.attribute_id}${a.qualifier_id ? ` (${a.qualifier_id})` : ""}`}
-        >
-          {a.attribute_id}
-        </button>
-        {a.kind === "multi" && (
-          <span className="ml-2 chip border-brand/40 text-brand">multi</span>
-        )}
-        {a.change_count > 0 && (
-          <span className="ml-2 chip border-amber/50 text-amber-900">changed</span>
-        )}
-      </td>
-      {showQualifier && (
-        <td className="px-3 py-2 font-mono text-xs text-ink/70">{a.qualifier_id || "—"}</td>
-      )}
-      <td className="px-3 py-2 font-mono text-xs break-all max-w-[28ch] text-ink">
-        {a.kind === "multi"
-          ? JSON.stringify(a.values_json)
-          : a.value_text || <span className="text-ink/40">∅</span>}
-        {a.unit_id && <span className="text-ink/50 ml-1">{a.unit_id}</span>}
-      </td>
-      <td className="px-3 py-2 font-mono text-xs text-right tabular-nums">
-        {a.change_count > 0 ? (
-          <span className="text-amber-900">{a.change_count}</span>
-        ) : (
-          <span className="text-ink/30">0</span>
-        )}
-      </td>
-      <td className="px-3 py-2 text-right">
-        <History size={12} className="inline text-ink/40" aria-hidden />
-      </td>
-    </tr>
+    </div>
   );
 }

@@ -1,205 +1,154 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
-import { Search, ArrowRight, ChevronLeft, ChevronRight, Package } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import {
+  Masthead,
+  Icon,
+  SearchShell,
+  EmptyState,
+  relTime,
+} from "../ui/primitives";
 import { fetchProducts } from "../lib/api";
-import { Input, Select, Button, TableSkeleton, EmptyState, ErrorState } from "../components/ui";
-import { absTime } from "../lib/utils";
-
-const PAGE_SIZE = 50;
-const ALL = "__all__";
 
 export default function Products() {
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["products"],
-    queryFn: fetchProducts,
-  });
-
   const [q, setQ] = useState("");
-  const [typeFilter, setTypeFilter] = useState<string>(ALL);
-  const [changedOnly, setChangedOnly] = useState(false);
-  const [page, setPage] = useState(1);
+  const navigate = useNavigate();
+  const { data, isLoading } = useQuery({ queryKey: ["products"], queryFn: fetchProducts });
 
-  const userTypes = useMemo(() => {
-    const s = new Set<string>();
-    (data ?? []).forEach((r) => r.user_type_id && s.add(r.user_type_id));
-    return Array.from(s).sort();
-  }, [data]);
-
-  const items = useMemo(() => {
-    const rows = data || [];
-    const needle = q.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (needle) {
-        const hay =
-          r.step_product_id.toLowerCase() +
-          " " +
-          (r.user_type_id || "").toLowerCase() +
-          " " +
-          (r.parent_id || "").toLowerCase();
-        if (!hay.includes(needle)) return false;
-      }
-      if (typeFilter !== ALL && r.user_type_id !== typeFilter) return false;
-      if (changedOnly && !(r.change_count && r.change_count > 0)) return false;
-      return true;
-    });
-  }, [data, q, typeFilter, changedOnly]);
-
-  const total = items.length;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const paged = items.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  const showingFrom = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
-  const showingTo = Math.min(currentPage * PAGE_SIZE, total);
+  const list = useMemo(() => {
+    if (!data) return [];
+    const s = q.toLowerCase();
+    return data.filter(
+      (p) =>
+        !s ||
+        p.step_product_id.toLowerCase().includes(s) ||
+        p.user_type_id?.toLowerCase().includes(s) ||
+        p.parent_id?.toLowerCase().includes(s)
+    );
+  }, [data, q]);
 
   return (
-    <>
-      <section className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b-2 border-ink pb-4">
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-ink/50">
-            catalogue
-          </p>
-          <h1 className="font-serif text-3xl md:text-4xl font-semibold text-ink leading-none mt-1">
-            Products
-          </h1>
-        </div>
-        <div className="font-mono text-xs text-ink/60 tabular-nums">
-          {showingFrom}–{showingTo} of {total.toLocaleString()}
-          {data && total !== data.length && (
-            <span className="text-ink/40"> · {data.length.toLocaleString()} total</span>
-          )}
-        </div>
-      </section>
+    <div className="fade-in">
+      <Masthead
+        eyebrow="Library"
+        title="Products"
+        subtitle="Every product the STEP feed has touched, with a rolling count of changes."
+      />
 
-      <div className="mb-4 grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-3 items-end">
-        <Input
-          label="Search"
-          leading={<Search size={14} aria-hidden />}
-          placeholder="Search id, type, or parent…"
-          value={q}
-          onChange={(e) => { setQ(e.target.value); setPage(1); }}
-          aria-label="Search products"
-        />
-        <Select
-          label="User type"
-          value={typeFilter}
-          onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}
-          aria-label="Filter by user type"
-        >
-          <option value={ALL}>all ({userTypes.length})</option>
-          {userTypes.map((t) => (<option key={t} value={t}>{t}</option>))}
-        </Select>
-        <label className="inline-flex items-center gap-2 font-mono text-xs text-ink/70 cursor-pointer select-none pb-2">
-          <input
-            type="checkbox"
-            className="h-4 w-4 accent-brand"
-            checked={changedOnly}
-            onChange={(e) => { setChangedOnly(e.target.checked); setPage(1); }}
-          />
-          changed only
-        </label>
+      <div style={{ display: "flex", marginBottom: 12 }}>
+        <SearchShell value={q} onChange={setQ} placeholder="Search products by ID, type or parent…" />
       </div>
 
       {isLoading ? (
-        <TableSkeleton rows={8} cols={6} />
-      ) : error ? (
-        <ErrorState
-          title="Couldn't load products"
-          description={error instanceof Error ? error.message : undefined}
-          onRetry={() => refetch()}
-        />
-      ) : total === 0 ? (
-        <EmptyState
-          icon={<Package size={18} aria-hidden />}
-          title="No products match your filters"
-          description="Try clearing the search box or switching to “all” user types."
-          action={
-            <Button
-              size="sm"
-              onClick={() => { setQ(""); setTypeFilter(ALL); setChangedOnly(false); }}
-            >
-              clear filters
-            </Button>
-          }
-        />
+        <div className="card" style={{ padding: 48, textAlign: "center", color: "var(--fg-tertiary)" }}>
+          <span className="spinner" style={{ marginRight: 8 }} /> Loading products…
+        </div>
+      ) : list.length === 0 ? (
+        <EmptyState icon="package" title="No products yet" body="Products will appear here after the first STEPXML ingest." />
       ) : (
-        <>
-          <div className="border-2 border-ink bg-surface shadow-sharp overflow-x-auto">
-            <table className="w-full">
-              <caption className="sr-only">Products list</caption>
-              <thead>
-                <tr className="border-b-2 border-ink bg-ink/5">
-                  <Th>Product ID</Th>
-                  <Th>User Type</Th>
-                  <Th>Parent</Th>
-                  <Th className="text-right">Changes</Th>
-                  <Th>Last change</Th>
-                  <Th />
-                </tr>
-              </thead>
-              <tbody>
-                {paged.map((p) => (
-                  <tr key={p.step_product_id}
-                      className="border-b border-ink/10 hover:bg-ink/5 transition">
-                    <td className="px-3 py-2 font-mono text-xs text-ink">{p.step_product_id}</td>
-                    <td className="px-3 py-2 font-mono text-xs text-ink/70">{p.user_type_id || "—"}</td>
-                    <td className="px-3 py-2 font-mono text-xs text-ink/70">{p.parent_id || "—"}</td>
-                    <td className="px-3 py-2 font-mono text-xs text-right tabular-nums">
-                      {p.change_count && p.change_count > 0 ? (
-                        <span className="text-amber-900">{p.change_count.toLocaleString()}</span>
-                      ) : (
-                        <span className="text-ink/30">0</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 font-mono text-xs text-ink/70">
-                      {p.last_change_date ? absTime(p.last_change_date).slice(0, 10) : "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <Link
-                        to={`/products/${encodeURIComponent(p.step_product_id)}`}
-                        className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-widest text-brand hover:text-ink transition"
-                        aria-label={`View product ${p.step_product_id}`}
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+         <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Type</th>
+                <th>Parent</th>
+                <th>Changes · total</th>
+                <th>Last change</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((p) => (
+                <tr
+                  key={p.step_product_id}
+                  className="clickable"
+                  onClick={() =>
+                    navigate(`/products/${encodeURIComponent(p.step_product_id)}`)
+                  }
+                >
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div
+                        style={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: 8,
+                          background: "var(--bg-muted)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "var(--fg-tertiary)",
+                        }}
                       >
-                        view <ArrowRight size={12} aria-hidden />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {totalPages > 1 && (
-            <nav aria-label="Pagination" className="mt-4 flex items-center justify-between">
-              <Button
-                size="sm"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-              >
-                <ChevronLeft size={12} aria-hidden /> prev
-              </Button>
-              <span className="font-mono text-xs text-ink/60">
-                page {currentPage} of {totalPages}
-              </span>
-              <Button
-                size="sm"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage >= totalPages}
-              >
-                next <ChevronRight size={12} aria-hidden />
-              </Button>
-            </nav>
-          )}
-        </>
+                        <Icon name="package" size={16} />
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <code
+                          className="mono"
+                          style={{
+                            fontSize: 13,
+                            color: "var(--fg)",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {p.step_product_id}
+                        </code>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    {p.user_type_id ? (
+                      <code className="mono" style={{ fontSize: 12, color: "var(--fg-secondary)" }}>
+                        {p.user_type_id}
+                      </code>
+                    ) : (
+                      <span style={{ color: "var(--fg-quaternary)" }}>—</span>
+                    )}
+                  </td>
+                  <td>
+                    {p.parent_id ? (
+                      <span
+                        className="badge"
+                        style={{ background: "var(--bg-muted)", color: "var(--fg-secondary)" }}
+                      >
+                        {p.parent_id}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--fg-quaternary)" }}>—</span>
+                    )}
+                  </td>
+                  <td>
+                    <span
+                      className="tabular"
+                      style={{
+                        fontWeight: 600,
+                        color: (p.change_count ?? 0) > 0 ? "var(--fg)" : "var(--fg-quaternary)",
+                      }}
+                    >
+                      {p.change_count ?? 0}
+                    </span>
+                  </td>
+                  <td>
+                    {p.last_change_date ? (
+                      <span style={{ fontSize: 12.5, color: "var(--fg-secondary)" }}>
+                        {relTime(p.last_change_date)}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--fg-quaternary)" }}>—</span>
+                    )}
+                  </td>
+                  <td>
+                    <Icon name="chevron-right" size={14} color="var(--fg-tertiary)" />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+         </div>
+        </div>
       )}
-    </>
-  );
-}
-
-function Th({ children, className = "" }: { children?: React.ReactNode; className?: string }) {
-  return (
-    <th scope="col" className={`px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-ink/60 text-left ${className}`}>
-      {children}
-    </th>
+    </div>
   );
 }

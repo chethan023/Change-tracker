@@ -51,8 +51,13 @@ export interface Snapshot {
 }
 
 export interface ClientConfig {
-  client_name: string; logo_url?: string | null;
-  primary_colour: string; step_base_url?: string | null;
+  client_name: string;
+  logo_url?: string | null;
+  primary_colour: string;
+  step_base_url?: string | null;
+  change_records_retention_days?: number | null;
+  raw_xml_retention_days?: number | null;
+  updated_at?: string | null;
 }
 
 export interface User {
@@ -63,6 +68,31 @@ export interface User {
 }
 
 export type UserRole = "admin" | "editor" | "viewer";
+
+export interface IngestCredentials {
+  api_key: string;
+  masked: string;
+  header_name: string;
+  endpoint: string;
+  source: "db" | "env";
+}
+
+export interface RetentionRunResult {
+  change_records_deleted: number;
+  raw_xml_cleared: number;
+  cutoff_change_records: string | null;
+  cutoff_raw_xml: string | null;
+}
+
+export interface SecurityPolicies {
+  jwt_expire_minutes: number;
+  login_rate_limit_per_min: number;
+  password_min_length: number;
+  max_users: number;
+  user_count: number;
+  smtp_configured: boolean;
+  env: string;
+}
 
 export interface Product {
   step_product_id: string;

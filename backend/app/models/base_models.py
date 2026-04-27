@@ -241,17 +241,40 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     active          = Column(Boolean, default=True)
     must_change_password = Column(Boolean, default=False, nullable=False)
+    # Unix epoch (UTC seconds). JWTs whose `iat` is older than this are rejected,
+    # giving us server-side revocation on password change / logout-all.
+    tokens_invalidated_at = Column(Integer, default=0, nullable=False)
     last_login      = Column(DateTime)
     created_at      = Column(DateTime, default=datetime.utcnow)
 
 
+class PasswordResetToken(Base):
+    """Single-use, time-limited reset token. We store only a sha256 of the
+    secret — the plaintext is mailed to the user and never persisted."""
+    __tablename__ = "password_reset_tokens"
+    id          = Column(Integer, primary_key=True)
+    user_id     = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    token_hash  = Column(String(64), unique=True, index=True, nullable=False)
+    expires_at  = Column(DateTime, nullable=False)
+    used_at     = Column(DateTime)
+    created_at  = Column(DateTime, default=datetime.utcnow)
+
+
 class ClientConfig(Base):
     __tablename__ = "client_config"
-    id                   = Column(Integer, primary_key=True)
-    client_name          = Column(String(255), default="Change Tracker")
-    logo_url             = Column(String(512))
-    primary_colour       = Column(String(16), default="#1B3A6B")
-    step_base_url        = Column(String(512))
-    smtp_host            = Column(String(255))
-    slack_webhook_url    = Column(String(512))
-    updated_at           = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id                           = Column(Integer, primary_key=True)
+    client_name                  = Column(String(255), default="Change Tracker")
+    logo_url                     = Column(String(512))
+    primary_colour               = Column(String(16), default="#1B3A6B")
+    step_base_url                = Column(String(512))
+    smtp_host                    = Column(String(255))
+    slack_webhook_url            = Column(String(512))
+    # Ingest API key managed in-app. NULL means "use INGEST_API_KEY env var".
+    # Stored in plaintext because the receiving end (STEP) needs the same
+    # value to send — it isn't a hashable secret.
+    ingest_api_key               = Column(String(128), nullable=True)
+    # Days to retain change records / raw STEPXML before cleanup.
+    # NULL means no preference — the run endpoint uses its own defaults.
+    change_records_retention_days = Column(Integer, nullable=True)
+    raw_xml_retention_days        = Column(Integer, nullable=True)
+    updated_at                   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

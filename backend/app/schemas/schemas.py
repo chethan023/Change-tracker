@@ -51,6 +51,22 @@ class AdminResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=12, max_length=128)
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=12, max_length=128)
+
+
+class ForgotPasswordResponse(BaseModel):
+    """Always 200; the optional `reset_url` is only populated when the server has
+    no SMTP configured (dev/local mode), so admins can hand the link out manually."""
+    message: str = "If that email is registered, a reset link has been sent."
+    reset_url: Optional[str] = None
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -69,6 +85,63 @@ class ConfigResponse(BaseModel):
     logo_url: Optional[str] = None
     primary_colour: str
     step_base_url: Optional[str] = None
+    # Retained days stored in DB; None means "not configured, use run-endpoint defaults".
+    change_records_retention_days: Optional[int] = None
+    raw_xml_retention_days: Optional[int] = None
+    updated_at: Optional[datetime] = None
+
+
+class ConfigUpdate(BaseModel):
+    # Empty strings are allowed and mean "clear the override and fall back to
+    # the env default" — the GET resolver treats blank values as missing.
+    client_name: Optional[str] = Field(None, max_length=255)
+    logo_url: Optional[str] = Field(None, max_length=512)
+    # Brand colour is the one strictly-validated field: a malformed value
+    # would leak into CSS.
+    primary_colour: Optional[str] = Field(
+        None, pattern=r"^(?:#(?:[0-9a-fA-F]{3}){1,2})?$",
+    )
+    step_base_url: Optional[str] = Field(None, max_length=512)
+    # Explicit null clears the stored preference; omitting the field leaves it unchanged.
+    change_records_retention_days: Optional[int] = Field(None, ge=7, le=3650)
+    raw_xml_retention_days: Optional[int] = Field(None, ge=7, le=3650)
+
+
+class SecurityPolicies(BaseModel):
+    """Read-only snapshot of server-enforced security/runtime policies."""
+    jwt_expire_minutes: int
+    login_rate_limit_per_min: int
+    password_min_length: int
+    max_users: int
+    user_count: int
+    smtp_configured: bool
+    env: str
+
+
+class RetentionRunRequest(BaseModel):
+    """Manual retention-cleanup request body. Days are validated client-side
+    too but kept here for direct API use."""
+    change_records_days: Optional[int] = Field(None, ge=7, le=3650)
+    raw_xml_days: Optional[int] = Field(None, ge=7, le=3650)
+
+
+class RetentionRunResult(BaseModel):
+    change_records_deleted: int
+    raw_xml_cleared: int
+    cutoff_change_records: Optional[datetime] = None
+    cutoff_raw_xml: Optional[datetime] = None
+
+
+class IngestCredentials(BaseModel):
+    """Ingestion credentials surfaced to admins inside Settings → STEP. The
+    plaintext key is included so it can be copied — the endpoint is
+    admin-only and must not be cached or logged downstream."""
+    api_key: str
+    masked: str
+    header_name: str = "X-API-Key"
+    endpoint: str = "/api/v1/ingest"
+    # Where the active key came from: "db" (rotated in-app) or "env" (deployment-managed).
+    source: str = "env"
 
 
 # ── Ingest ──────────────────────────────────────────────────────────
@@ -103,9 +176,9 @@ class ChangeRecordOut(BaseModel):
 
 
 class ChangeListResponse(BaseModel):
-    # `total` is only computed on page 1 to avoid an expensive COUNT on every
-    # paginated request. Clients should rely on `has_more` for navigation when
-    # `total` is None.
+    # `total` is only computed on page 1 — on a multi-million-row table the
+    # COUNT(*) dominates latency. Subsequent pages return None and the client
+    # uses `has_more` to drive pagination instead.
     total: Optional[int] = None
     page: int
     page_size: int

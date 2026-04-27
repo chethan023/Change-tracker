@@ -1,164 +1,42 @@
+/* @import statements MUST come before @tailwind / any other rules per CSS spec.
+   When out of order, postcss-import drops them silently — and we end up with
+   no design tokens, no kit primitives, and no app layout. */
+@import "./design/tokens.css";
+@import "./design/kit.css";
+@import "./design/app.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* ──────────────────────────────────────────────────────────────
-   Theme tokens — consumed by tailwind.config.js via CSS variables.
-   Using space-separated RGB triplets so Tailwind can apply alpha.
+   New UI — Apple-inspired design system.
+   tokens.css / kit.css / app.css carry all primary styling.
+   Tailwind remains for the legacy editorial auth screens.
    ────────────────────────────────────────────────────────────── */
 
-:root {
-  /* Light (default) — calm, paper-like */
-  --c-paper:        255 255 255;
-  --c-paper-100:    249 250 251;
+/* back-compat alias for any legacy inline styles that referenced --brand-colour */
+:root { --brand-colour: var(--accent); }
 
-  --c-surface:      249 250 251;
-  --c-surface-100:  243 244 246;
-  --c-surface-200:  229 231 235;
-
-  --c-ink:          17 24 39;     /* primary text / high-contrast */
-  --c-ink-50:       243 244 246;  /* alternate very-subtle bg */
-  --c-ink-100:      229 231 235;  /* hairline borders / hover bg */
-  --c-ink-900:      17 24 39;
-
-  --c-brand:        37 99 235;
-  --c-brand-50:     239 246 255;
-  --c-brand-100:    219 234 254;
-  --c-brand-900:    30 64 175;
-
-  --c-amber:        217 119 6;
-  --c-amber-50:     255 247 237;
-  --c-amber-900:    146 64 14;
-
-  --c-rose:         220 38 38;
-  --c-rose-50:      254 242 242;
-
-  --c-sage:         22 163 74;
-  --c-sage-50:      240 253 244;
-
-  --brand-colour:   #2563eb;  /* back-compat alias used by legacy inline styles */
+/* Bare input (used inside bordered search shells) */
+input.input-bare,
+textarea.input-bare {
+  border: none;
+  outline: none;
+  background: transparent;
+  flex: 1;
+  padding: 10px;
+  font-family: var(--font-text);
+  font-size: 14px;
+  color: var(--fg);
 }
+input.input-bare::placeholder,
+textarea.input-bare::placeholder { color: var(--fg-quaternary); }
 
-.dark {
-  /* Dark — GitHub-inspired editorial */
-  --c-paper:        13 17 23;
-  --c-paper-100:    22 27 34;
+textarea.input { resize: vertical; font-family: var(--font-text); line-height: 1.5; }
 
-  --c-surface:      22 27 34;
-  --c-surface-100:  31 37 48;
-  --c-surface-200:  42 49 60;
+.link { color: var(--accent); cursor: pointer; text-decoration: none; background: none; border: none; padding: 0; font: inherit; }
+.link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-  --c-ink:          230 237 243;
-  --c-ink-50:       22 27 34;
-  --c-ink-100:      42 49 60;
-  --c-ink-900:      230 237 243;
-
-  --c-brand:        88 166 255;
-  --c-brand-50:     26 43 68;
-  --c-brand-100:    33 59 94;
-  --c-brand-900:    121 184 255;
-
-  --c-amber:        240 160 48;
-  --c-amber-50:     58 42 10;
-  --c-amber-900:    240 160 48;
-
-  --c-rose:         248 81 73;
-  --c-rose-50:      58 26 26;
-
-  --c-sage:         63 185 80;
-  --c-sage-50:      15 43 23;
-}
-
-html, body { height: 100%; }
-
-body {
-  font-feature-settings: "cv11", "ss01", "ss02";
-  color: rgb(var(--c-ink));
-  background: rgb(var(--c-paper));
-  transition: background-color 180ms ease, color 180ms ease;
-}
-
-/* Subtle accent wash (hidden by default in light; re-enabled in dark) */
-.dark body {
-  background:
-    radial-gradient(ellipse at top left,    rgb(var(--c-brand) / 0.08) 0%, transparent 55%),
-    radial-gradient(ellipse at bottom right, rgb(var(--c-amber) / 0.06) 0%, transparent 55%),
-    rgb(var(--c-paper));
-  background-attachment: fixed;
-}
-
-/* Grid texture — only in dark, where it reads well */
-.dark body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.04;
-  z-index: 0;
-  background-image:
-    linear-gradient(rgb(var(--c-ink) / 0.7) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(var(--c-ink) / 0.7) 1px, transparent 1px);
-  background-size: 32px 32px;
-}
-
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: rgb(var(--c-paper)); }
-::-webkit-scrollbar-thumb {
-  background: rgb(var(--c-ink) / 0.2);
-  border-radius: 0;
-}
-::-webkit-scrollbar-thumb:hover { background: rgb(var(--c-brand) / 0.5); }
-
-::selection { background: rgb(var(--c-brand) / 0.35); color: rgb(var(--c-ink)); }
-
-.chip {
-  @apply inline-flex items-center gap-1 px-2 py-0.5 text-xs font-mono uppercase tracking-wider border;
-}
-
-.ticker-line {
-  background: repeating-linear-gradient(
-    90deg,
-    rgb(var(--c-brand)) 0 8px,
-    transparent 8px 16px
-  );
-  height: 2px;
-  opacity: 0.6;
-}
-
-.anchor-underline {
-  background-image: linear-gradient(currentColor, currentColor);
-  background-size: 100% 1px;
-  background-repeat: no-repeat;
-  background-position: 0 100%;
-  padding-bottom: 1px;
-}
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%      { opacity: 0.4; transform: scale(0.85); }
-}
-.pulse-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
-
-/* Skeleton — theme-aware shimmer */
-.skeleton {
-  background: linear-gradient(
-    90deg,
-    rgb(var(--c-ink) / 0.06) 0px,
-    rgb(var(--c-ink) / 0.12) 200px,
-    rgb(var(--c-ink) / 0.06) 400px
-  );
-  background-size: 800px 100%;
-  @apply animate-shimmer;
-}
-
-/* Ensure native controls inherit theme */
-input, select, textarea {
-  color-scheme: light dark;
-}
-.dark input, .dark select, .dark textarea { color-scheme: dark; }
-
-/* Focus — visible and consistent across themes */
-:where(button, a, input, select, textarea, [role="button"]):focus-visible {
-  outline: 2px solid rgb(var(--c-brand));
-  outline-offset: 2px;
-}
+/* Tailwind compat: the auth pages used these custom utility-ish classes */
+.dark { color-scheme: dark; }

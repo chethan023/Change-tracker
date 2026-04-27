@@ -1,5 +1,6 @@
 """Users router — admin-managed (max 10 per deployment)."""
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -27,11 +28,12 @@ def create_user(
     if db.query(User).count() >= settings.MAX_USERS:
         raise HTTPException(status_code=403,
             detail=f"User limit of {settings.MAX_USERS} reached for this deployment")
-    if db.query(User).filter_by(email=body.email).first():
+    email = (body.email or "").strip().lower()
+    if db.query(User).filter(func.lower(User.email) == email).first():
         raise HTTPException(status_code=409, detail="Email already in use")
 
     u = User(
-        email=body.email, role=body.role.value, step_user_id=body.step_user_id,
+        email=email, role=body.role.value, step_user_id=body.step_user_id,
         hashed_password=hash_password(body.password),
         must_change_password=True,
     )
@@ -73,8 +75,10 @@ def admin_reset_password(
     u = db.query(User).filter_by(id=user_id).first()
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
+    from datetime import datetime, timezone
     u.hashed_password = hash_password(body.new_password)
     u.must_change_password = True
+    u.tokens_invalidated_at = int(datetime.now(timezone.utc).timestamp()) + 1
     db.commit()
 
 

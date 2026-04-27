@@ -32,6 +32,11 @@ class Settings(BaseSettings):
 
     # STEP
     STEP_BASE_URL: str = ""
+    # Public base URL of THIS backend (e.g. https://api.example.com), used for
+    # ingest URLs surfaced to admins. When unset the backend derives the URL
+    # from the incoming request — fine in dev, but breaks behind reverse
+    # proxies that don't forward Host/Forwarded headers.
+    PUBLIC_BASE_URL: str = ""
 
     # Email
     SMTP_HOST: str = ""
@@ -39,6 +44,10 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     EMAIL_FROM: str = "noreply@example.com"
+    # Frontend base URL used for password-reset links. When set, overrides the
+    # origin/host header from the incoming request — important when the API sits
+    # behind a reverse proxy that strips or rewrites the Origin header.
+    FRONTEND_URL: str = ""
 
     # Slack
     SLACK_DEFAULT_WEBHOOK_URL: str = ""

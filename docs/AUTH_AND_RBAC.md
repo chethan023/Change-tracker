@@ -1,7 +1,26 @@
 # Authentication, First-Login Password Change & RBAC
 
-**Release:** 2026-04-19
+**Release:** 2026-04-25
 **Scope:** Backend (FastAPI) + Frontend (React/Vite) + SQLite/Postgres schema
+
+## What changed in 2026-04-25
+
+- **Case-insensitive email** at login + user creation (server normalises on
+  read and write).
+- **Server-side token revocation** via `users.tokens_invalidated_at`. JWTs
+  carry `iat` and are rejected when `iat < tokens_invalidated_at`.
+  Triggered by `/auth/logout`, `/auth/change-password`, and admin reset.
+- **`POST /auth/logout`** — revokes all tokens for the calling user.
+- **`POST /auth/refresh`** — re-issues a fresh access token.
+- **Forgot-password flow** (`/auth/forgot-password` + `/auth/reset-password`)
+  with single-use, 30-minute, sha256-hashed tokens.
+- **Multi-tab session sync** — login/logout in one tab now propagates to
+  other tabs via the `storage` event.
+- **Login page redirects** to home (or `/change-password`) when the user
+  is already authenticated.
+- **Distinct 401 markers**: `token_expired`, `token_revoked`, `Invalid token`.
+- **Admin-editable client config** at `PATCH /api/v1/config` (logo, brand
+  colour, STEP base URL, client name).
 
 This document describes the authentication model, the forced first-login
 password-change flow, the new User Management console, and how role-based
@@ -91,7 +110,44 @@ On success (HTTP 204): the user's password is re-hashed with bcrypt and
 
 ### 3.3 Logout
 
-Stateless — the frontend simply discards the token from `localStorage`.
+`POST /api/v1/auth/logout` — bumps the user's `tokens_invalidated_at`,
+which invalidates **every** access token issued before the logout. The
+frontend also clears `localStorage` so the local UI state matches.
+
+The frontend `logout()` helper fires the request asynchronously and clears
+local state immediately, so the UI is responsive even if the network is
+slow.
+
+### 3.4 Refresh
+
+`POST /api/v1/auth/refresh` — requires a currently-valid bearer token.
+Returns a new `TokenResponse` with a fresh `iat`/`exp`. There is no
+separate refresh-token; clients are expected to call this before
+`JWT_EXPIRE_MINUTES` elapses if they want to keep the session open.
+
+### 3.5 Forgot password
+
+`POST /api/v1/auth/forgot-password` (email) → always returns 200 to avoid
+enumeration. If the email matches an active user, a single-use,
+sha256-hashed reset token is generated, stored in
+`password_reset_tokens`, and emailed via SMTP. **When `SMTP_HOST` is
+unset (dev/local)**, the response includes `reset_url` so an admin can
+hand the link out manually. Token TTL: 30 minutes (one constant in
+`routers/auth.py`).
+
+`POST /api/v1/auth/reset-password` (token, new_password) — validates the
+token (unexpired, unused), sets the new password, marks the token used,
+and bumps `tokens_invalidated_at`.
+
+### 3.6 Token lifecycle (recap)
+
+| State    | Cause                                                | Server response detail |
+|----------|------------------------------------------------------|------------------------|
+| created  | login / refresh / first set                          | `200 TokenResponse`    |
+| valid    | `iat >= user.tokens_invalidated_at` and `exp > now`  | request proceeds       |
+| expired  | `exp <= now`                                         | `401 token_expired`    |
+| revoked  | `iat < user.tokens_invalidated_at`                   | `401 token_revoked`    |
+| invalid  | bad signature / malformed                            | `401 Invalid token`    |
 
 ---
 
@@ -204,7 +260,12 @@ Guards are declared per endpoint in `backend/app/routers/*.py`.
 | Endpoint                                       | Guard                         | Roles allowed     |
 |------------------------------------------------|-------------------------------|-------------------|
 | `POST /api/v1/auth/login`                      | public (rate-limited)         | any               |
+| `POST /api/v1/auth/forgot-password`            | public (rate-limited)         | any               |
+| `POST /api/v1/auth/reset-password`             | public (token-gated)          | any               |
+| `POST /api/v1/auth/logout`                     | `get_current_user_pending`    | any authenticated |
+| `POST /api/v1/auth/refresh`                    | `get_current_user`            | any authenticated |
 | `POST /api/v1/auth/change-password`            | `get_current_user_pending`    | any authenticated |
+| `PATCH /api/v1/config`                         | `require_admin`               | admin             |
 | `GET /api/v1/users/me`                         | `get_current_user_pending`    | any authenticated |
 | `GET /api/v1/users`                            | `require_admin`               | admin             |
 | `POST /api/v1/users`                           | `require_admin`               | admin             |
@@ -270,9 +331,28 @@ store persisted to `localStorage`:
 
 `axios` interceptor in [`lib/api.ts`](../frontend/src/lib/api.ts):
 
-- `401` → clear token, redirect to `/login`.
+- `401` → clear token, redirect to `/login` (unless already on a public
+  route: `/login`, `/forgot-password`, `/reset-password`).
 - `403 password_change_required` → redirect to `/change-password`.
 - all other errors → propagate to caller.
+
+### 7.4 Multi-tab consistency
+
+The auth store ([`lib/auth.ts`](../frontend/src/lib/auth.ts)) attaches a
+`storage` listener at module load. When any auth-related localStorage key
+changes in another tab, the store re-syncs. Result: logging out (or
+logging in) in one tab is reflected in every other open tab on the next
+render — no manual refresh.
+
+### 7.5 Routes added in this release
+
+```
+/forgot-password    — public
+/reset-password     — public (consumes ?token=…)
+```
+
+Both routes are listed in `PUBLIC_PATHS` inside the axios interceptor so
+a 401 from the API doesn't bounce the user back to /login mid-flow.
 
 ---
 
@@ -289,6 +369,11 @@ This applies:
 
 1. `001_initial` — original schema (no-op if already applied).
 2. `002_user_must_change_password` — adds the column.
+3. `003_notification_rule_multi` — multi-value notification filters.
+4. `004_change_records_perf_indexes` — composite indexes that back the
+   default `change_date desc` ordering across hot filters.
+5. `005_user_tokens_invalidated_at` — server-side token revocation column.
+6. `006_password_reset_tokens` — table backing the forgot-password flow.
 
 ### 8.2 Rollback
 

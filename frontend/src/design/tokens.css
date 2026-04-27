@@ -1,0 +1,236 @@
+/* ==========================================================================
+   STIBO Step Change Tracker — Colors & Type
+   Apple-inspired design language applied to the STIBO Step PIM
+   change-tracking product surface.
+   ========================================================================== */
+
+:root {
+  /* ── Brand / Accent ──────────────────────────────────────────────────── */
+  --accent:            #0071E3;   /* Apple system blue — primary action */
+  --accent-hover:      #0077ED;   /* Slightly lighter on hover */
+  --accent-press:      #0062C4;   /* Darker on press */
+  --accent-soft:       #E8F2FE;   /* Tinted backgrounds (selection, focus ring halo) */
+  --accent-border:     #B3D4FB;   /* Subtle blue border on secondary surfaces */
+
+  /* ── Neutrals ────────────────────────────────────────────────────────── */
+  --bg:                #FFFFFF;   /* Canvas */
+  --bg-elevated:       #FFFFFF;   /* Cards, sheets */
+  --bg-muted:          #F5F5F7;   /* Apple "chrome" gray — toolbars, secondary btns */
+  --bg-subtle:         #FAFAFC;   /* Striped rows, hover wash */
+  --bg-inset:          #F2F2F4;   /* Code blocks, inset panels */
+
+  --fg:                #1D1D1F;   /* Near-black — primary text */
+  --fg-secondary:      #4B4B50;   /* Secondary text */
+  --fg-tertiary:       #86868B;   /* Apple tertiary gray — meta, timestamps */
+  --fg-quaternary:     #B5B5B9;   /* Disabled / placeholder */
+  --fg-on-accent:      #FFFFFF;   /* White text on blue buttons */
+
+  --border:            #D2D2D7;   /* Hairline dividers (Apple site standard) */
+  --border-strong:     #B5B5B9;   /* Stronger dividers */
+  --border-subtle:     #E8E8ED;   /* Barely-there separators */
+
+  /* ── Semantic — change validation / status ──────────────────────────── */
+  --success:           #34C759;   /* Approved, connection healthy */
+  --success-soft:      #E8F8EC;
+  --success-fg:        #1C7A33;
+
+  --warning:           #FF9F0A;   /* Pending */
+  --warning-soft:      #FFF4E1;
+  --warning-fg:        #8A5300;
+
+  --danger:            #FF3B30;   /* Rejected / removed */
+  --danger-soft:       #FFECEB;
+  --danger-fg:         #B3261E;
+
+  --info:              #0071E3;   /* Modified / informational */
+  --info-soft:         #E8F2FE;
+  --info-fg:           #004C9A;
+
+  /* ── Change-type accent map (STEPXML event types) ───────────────────── */
+  --change-add:        #34C759;   /* PRODUCT_CREATED, REFERENCE_ADDED, ASSET_LINKED, CONTAINER_ADDED */
+  --change-modify:     #0071E3;   /* ATTRIBUTE_VALUE, MULTIVALUE_CHANGED, PRODUCT_NAME_CHANGED, CONTAINER_VALUE */
+  --change-remove:     #FF3B30;   /* PRODUCT_DELETED, REFERENCE_REMOVED, ASSET_UNLINKED, CONTAINER_REMOVED */
+  --change-move:       #AF52DE;   /* PRODUCT_RECLASSIFIED, PRODUCT_TYPE_CHANGED, CLASSIFICATION_* */
+  --change-suppress:   #86868B;   /* *_SUPPRESSED */
+
+  /* Diff view: before/after tinted blocks */
+  --diff-before-bg:    #FFECEB;
+  --diff-before-fg:    #B3261E;
+  --diff-before-line:  #FF3B30;
+  --diff-after-bg:     #E8F8EC;
+  --diff-after-fg:     #1C7A33;
+  --diff-after-line:   #34C759;
+
+  /* ── Focus ring ─────────────────────────────────────────────────────── */
+  --focus-ring:        0 0 0 4px rgba(0, 113, 227, 0.25);
+
+  /* ── Shadow (intentionally minimal; Apple leans on hairlines) ────────── */
+  --shadow-xs:         0 0 0 1px rgba(0, 0, 0, 0.04);
+  --shadow-sm:         0 1px 2px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --shadow-md:         0 4px 12px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --shadow-lg:         0 12px 32px rgba(0, 0, 0, 0.10), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --shadow-popover:    0 8px 24px rgba(0, 0, 0, 0.12);
+
+  /* ── Radii ──────────────────────────────────────────────────────────── */
+  --radius-xs:         4px;
+  --radius-sm:         6px;
+  --radius-md:         10px;
+  --radius-lg:         14px;
+  --radius-xl:         20px;
+  --radius-pill:       980px;  /* Apple's signature pill button */
+
+  /* ── Spacing scale (4px grid) ──────────────────────────────────────── */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+  --sp-20: 80px;
+
+  /* ── Motion ─────────────────────────────────────────────────────────── */
+  --ease-standard:     cubic-bezier(0.4, 0.0, 0.2, 1);
+  --ease-out:          cubic-bezier(0.0, 0.0, 0.2, 1);
+  --ease-spring:       cubic-bezier(0.3, 1.3, 0.4, 1);  /* Apple-style slight overshoot */
+  --dur-fast:          120ms;
+  --dur-base:          180ms;
+  --dur-slow:          280ms;
+
+  /* ── Typography ─────────────────────────────────────────────────────── */
+  --font-display:      "SF Pro Display", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  --font-text:         "SF Pro Text", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:         "SF Mono", "JetBrains Mono", ui-monospace, "Menlo", "Consolas", monospace;
+
+  --tracking-tight:    -0.022em;
+  --tracking-normal:   -0.008em;
+  --tracking-wide:     0.04em;
+}
+
+/* ==========================================================================
+   Dark mode — applied via [data-theme="dark"] on <html>.
+   Mirrors macOS Sonoma / iOS dark: near-black canvas, layered grays,
+   slightly lifted accent blue, desaturated semantic tints.
+   ========================================================================== */
+[data-theme="dark"] {
+  --accent:            #0A84FF;
+  --accent-hover:      #409CFF;
+  --accent-press:      #0060C9;
+  --accent-soft:       rgba(10, 132, 255, 0.18);
+  --accent-border:     rgba(10, 132, 255, 0.55);
+
+  --bg:                #000000;
+  --bg-elevated:       #1C1C1E;
+  --bg-muted:          #2C2C2E;
+  --bg-subtle:         #141416;
+  --bg-inset:          #1C1C1E;
+
+  --fg:                #F5F5F7;
+  --fg-secondary:      #C7C7CC;
+  --fg-tertiary:       #8E8E93;
+  --fg-quaternary:     #636366;
+  --fg-on-accent:      #FFFFFF;
+
+  --border:            #38383A;
+  --border-strong:     #48484A;
+  --border-subtle:     #2C2C2E;
+
+  --success:           #32D74B;
+  --success-soft:      rgba(50, 215, 75, 0.16);
+  --success-fg:        #7BE58C;
+
+  --warning:           #FF9F0A;
+  --warning-soft:      rgba(255, 159, 10, 0.16);
+  --warning-fg:        #FFCB6B;
+
+  --danger:            #FF453A;
+  --danger-soft:       rgba(255, 69, 58, 0.16);
+  --danger-fg:         #FF8A7F;
+
+  --info:              #0A84FF;
+  --info-soft:         rgba(10, 132, 255, 0.16);
+  --info-fg:           #7FB8FF;
+
+  --change-add:        #32D74B;
+  --change-modify:     #0A84FF;
+  --change-remove:     #FF453A;
+  --change-move:       #BF5AF2;
+  --change-suppress:   #8E8E93;
+
+  --diff-before-bg:    rgba(255, 69, 58, 0.14);
+  --diff-before-fg:    #FF8A7F;
+  --diff-before-line:  #FF453A;
+  --diff-after-bg:     rgba(50, 215, 75, 0.14);
+  --diff-after-fg:     #7BE58C;
+  --diff-after-line:   #32D74B;
+
+  --focus-ring:        0 0 0 4px rgba(10, 132, 255, 0.4);
+
+  --shadow-xs:         0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-sm:         0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-md:         0 4px 12px rgba(0, 0, 0, 0.5),  0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-lg:         0 12px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-popover:    0 8px 24px rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="dark"] .nav-blur { background: rgba(22, 22, 24, 0.72) !important; }
+[data-theme="dark"] pre, [data-theme="dark"] code { color: var(--fg); }
+[data-theme="dark"] ::selection { background: var(--accent-soft); color: var(--fg); }
+
+/* ==========================================================================
+   Semantic type roles — use these in components, not raw sizes.
+   Apple SF type scale: Display for 28px+, Text for body / UI.
+   ========================================================================== */
+
+.h-hero      { font-family: var(--font-display); font-size: 56px; line-height: 1.05; letter-spacing: -0.025em; font-weight: 600; color: var(--fg); }
+.h-1         { font-family: var(--font-display); font-size: 40px; line-height: 1.1;  letter-spacing: -0.022em; font-weight: 600; color: var(--fg); }
+.h-2         { font-family: var(--font-display); font-size: 28px; line-height: 1.15; letter-spacing: -0.018em; font-weight: 600; color: var(--fg); }
+.h-3         { font-family: var(--font-display); font-size: 22px; line-height: 1.25; letter-spacing: -0.014em; font-weight: 600; color: var(--fg); }
+.h-4         { font-family: var(--font-text);    font-size: 17px; line-height: 1.3;  letter-spacing: -0.01em;  font-weight: 600; color: var(--fg); }
+
+.body-lg     { font-family: var(--font-text);    font-size: 17px; line-height: 1.47; letter-spacing: -0.01em;  font-weight: 400; color: var(--fg); }
+.body        { font-family: var(--font-text);    font-size: 15px; line-height: 1.47; letter-spacing: -0.008em; font-weight: 400; color: var(--fg); }
+.body-sm     { font-family: var(--font-text);    font-size: 13px; line-height: 1.45; letter-spacing: -0.005em; font-weight: 400; color: var(--fg-secondary); }
+.caption     { font-family: var(--font-text);    font-size: 12px; line-height: 1.4;  letter-spacing: 0;        font-weight: 400; color: var(--fg-tertiary); }
+
+.label       { font-family: var(--font-text);    font-size: 12px; line-height: 1.3;  letter-spacing: 0.02em;   font-weight: 500; color: var(--fg-secondary); text-transform: uppercase; }
+.eyebrow     { font-family: var(--font-text);    font-size: 11px; line-height: 1.3;  letter-spacing: 0.08em;   font-weight: 600; color: var(--accent); text-transform: uppercase; }
+
+.code        { font-family: var(--font-mono);    font-size: 12.5px; line-height: 1.5; font-weight: 400; color: var(--fg); }
+.code-lg     { font-family: var(--font-mono);    font-size: 13.5px; line-height: 1.55; font-weight: 400; color: var(--fg); }
+
+/* Utility: tabular nums for counters & stats */
+.tabular     { font-variant-numeric: tabular-nums; }
+
+/* ==========================================================================
+   Base element mappings (optional convenience; components typically use classes)
+   ========================================================================== */
+html, body {
+  font-family: var(--font-text);
+  font-size: 15px;
+  line-height: 1.47;
+  letter-spacing: -0.008em;
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+h1 { font-family: var(--font-display); font-size: 40px; line-height: 1.1;  letter-spacing: -0.022em; font-weight: 600; margin: 0; }
+h2 { font-family: var(--font-display); font-size: 28px; line-height: 1.15; letter-spacing: -0.018em; font-weight: 600; margin: 0; }
+h3 { font-family: var(--font-display); font-size: 22px; line-height: 1.25; letter-spacing: -0.014em; font-weight: 600; margin: 0; }
+h4 { font-family: var(--font-text);    font-size: 17px; line-height: 1.3;  letter-spacing: -0.01em;  font-weight: 600; margin: 0; }
+
+code, pre, kbd {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+::selection { background: var(--accent-soft); color: var(--fg); }

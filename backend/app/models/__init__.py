@@ -4,7 +4,7 @@ from app.models.base_models import (
     Reference, AssetLink, Classification,
     DataContainer, ContainerValue,
     ChangeRecord, Snapshot, NotificationRule, NotificationLog,
-    User, ClientConfig, ChangeElementType,
+    User, ClientConfig, ChangeElementType, PasswordResetToken,
 )
 
 __all__ = [
@@ -12,5 +12,5 @@ __all__ = [
     "Reference", "AssetLink", "Classification",
     "DataContainer", "ContainerValue",
     "ChangeRecord", "Snapshot", "NotificationRule", "NotificationLog",
-    "User", "ClientConfig", "ChangeElementType",
+    "User", "ClientConfig", "ChangeElementType", "PasswordResetToken",
 ]
