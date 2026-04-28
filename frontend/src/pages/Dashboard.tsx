@@ -175,7 +175,7 @@ const onExport = () => {
               View all changes →
             </Link>
             {canExport && (
-              <Button variant="secondary" className="btn-secondary" size="sm" icon="download" onClick={onExport}>
+              <Button  className="btn btn-primary btn-sm" variant="secondary"  size="sm" icon="download" onClick={onExport}>
                 Export CSV
               </Button>
             )}

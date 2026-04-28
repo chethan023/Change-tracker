@@ -121,25 +121,10 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
             "changed_hint": name_el.get("Changed") == "true",
         }
 
-    # Direct <Values>/<Value>
-    for val in product.findall("{*}Values/{*}Value"):
-        yield _value_event(val, pid, "ATTRIBUTE_VALUE")
-
-    # <Values>/<MultiValue>
-    for mv in product.findall("{*}Values/{*}MultiValue"):
-        values = [
-            (v.text or "").strip()
-            for v in mv.findall("{*}Value")
-            if v.text is not None
-        ]
-        yield {
-            "change_element_type": "MULTIVALUE_CHANGED",
-            "step_product_id": pid,
-            "attribute_id": mv.get("AttributeID"),
-            "qualifier_id": None,   # MultiValue in this schema has no QualifierID at the wrapper
-            "current_values": values,
-            "changed_hint": mv.get("Changed") == "true",
-        }
+    # <Values> children: <Value>, <ValueGroup>, <MultiValue>
+    values_root = product.find("{*}Values")
+    if values_root is not None:
+        yield from _walk_values(values_root, pid)
 
     # Product cross-references
     for ref in product.findall("{*}ProductCrossReference"):
@@ -195,7 +180,9 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
             "qualifier_id": a.get("QualifierID"),
         }
 
-    # Classification references
+    # Classification references — schema uses three element names interchangeably
+    # depending on export shape: ClassificationReference, ClassificationCrossReference,
+    # and the legacy ClassificationLink. Treat all as the same logical link.
     for c in product.findall("{*}ClassificationReference"):
         yield {
             "change_element_type": "CLASSIFICATION_LINKED",
@@ -203,11 +190,26 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
             "target_id": c.get("ClassificationID"),
             "changed_hint": c.get("Changed") == "true",
         }
+    for c in product.findall("{*}ClassificationCrossReference"):
+        yield {
+            "change_element_type": "CLASSIFICATION_LINKED",
+            "step_product_id": pid,
+            "target_id": c.get("ClassificationID"),
+            "ref_type": c.get("Type"),
+            "changed_hint": c.get("Changed") == "true",
+        }
     for c in product.findall("{*}DeleteClassificationReference"):
         yield {
             "change_element_type": "CLASSIFICATION_UNLINKED",
             "step_product_id": pid,
             "target_id": c.get("ClassificationID"),
+        }
+    for c in product.findall("{*}DeleteClassificationCrossReference"):
+        yield {
+            "change_element_type": "CLASSIFICATION_UNLINKED",
+            "step_product_id": pid,
+            "target_id": c.get("ClassificationID"),
+            "ref_type": c.get("Type"),
         }
 
     # Data containers — use .// to catch both direct and MultiDataContainer-wrapped
@@ -225,11 +227,14 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
             "changed_hint": dc.get("Changed") == "true",
         }
 
-        # Nested values inside the container
-        for val in dc.findall("{*}Values/{*}Value"):
-            ev = _value_event(val, pid, "CONTAINER_VALUE")
-            ev["step_container_id"] = container_id
-            yield ev
+        # Nested values inside the container — handle Value / ValueGroup / MultiValue
+        cv_root = dc.find("{*}Values")
+        if cv_root is not None:
+            for ev in _walk_values(cv_root, pid):
+                if ev["change_element_type"] == "ATTRIBUTE_VALUE":
+                    ev["change_element_type"] = "CONTAINER_VALUE"
+                ev["step_container_id"] = container_id
+                yield ev
 
         # Nested asset links inside the container
         for a in dc.findall("{*}AssetCrossReference"):
@@ -250,18 +255,130 @@ def _parse_product(product, context_id: Optional[str]) -> Iterator[Dict[str, Any
         }
 
 
-def _value_event(val_el, product_id: str, event_type: str) -> Dict[str, Any]:
-    """Build a change event dict from a <Value> element."""
+def _effective_qualifier(el) -> Optional[str]:
+    """
+    A STEPXML <Value> can carry its locale/context in any of three attributes:
+        QualifierID         — explicit qualifier (e.g. "da", "en-US", "Qualifier root")
+        LOVQualifierID      — locale of an LOV (List-Of-Values) display label
+        DerivedContextID    — context of a derived/computed value
+    Treat them uniformly so each becomes its own (attribute, qualifier) row.
+    """
+    return (el.get("QualifierID")
+            or el.get("LOVQualifierID")
+            or el.get("DerivedContextID"))
+
+
+def _value_event(val_el, product_id: str, event_type: str,
+                 attribute_id: Optional[str] = None,
+                 group_lov_id: Optional[str] = None) -> Dict[str, Any]:
+    """Build a change event dict from a <Value> element.
+
+    `attribute_id` / `group_lov_id` allow callers to pass values inherited
+    from a wrapping <ValueGroup> (the inner <Value> doesn't repeat them)."""
     return {
         "change_element_type": event_type,
         "step_product_id": product_id,
-        "attribute_id": val_el.get("AttributeID"),
-        "qualifier_id": val_el.get("QualifierID"),
+        "attribute_id": val_el.get("AttributeID") or attribute_id,
+        "qualifier_id": _effective_qualifier(val_el),
         "unit_id": val_el.get("UnitID"),
-        "lov_id": val_el.get("ID"),
+        "lov_id": val_el.get("ID") or group_lov_id,
         "current_value": (val_el.text or "").strip(),
         "changed_hint": val_el.get("Changed") == "true",
+        "inherited": val_el.get("Inherited"),
+        "derived": val_el.get("Derived") == "true",
     }
+
+
+def _collect_multi_members(mv) -> list[Dict[str, Any]]:
+    """Flatten a <MultiValue> into a list of per-value dicts.
+
+    A MultiValue can hold:
+      - direct <Value> children
+      - one or more <ValueGroup> wrappers, each containing <Value> children
+        (the schema uses ValueGroup to bind a QualifierID to a set of LOV labels)
+
+    Each returned dict carries qualifier, lov_id, unit_id, and text so the
+    UI can render qualifier-aware multi-value displays without losing data.
+    """
+    members: list[Dict[str, Any]] = []
+    for child in mv:
+        local = etree.QName(child.tag).localname
+        if local == "Value":
+            members.append({
+                "qualifier_id": _effective_qualifier(child),
+                "lov_id": child.get("ID"),
+                "unit_id": child.get("UnitID"),
+                "value": (child.text or "").strip(),
+            })
+        elif local == "ValueGroup":
+            group_qid = _effective_qualifier(child)
+            group_lov = child.get("ID")
+            for v in child.findall("{*}Value"):
+                members.append({
+                    "qualifier_id": _effective_qualifier(v) or group_qid,
+                    "lov_id": v.get("ID") or group_lov,
+                    "unit_id": v.get("UnitID"),
+                    "value": (v.text or "").strip(),
+                })
+    return members
+
+
+def _walk_values(values_root, product_id: str) -> Iterator[Dict[str, Any]]:
+    """
+    Walk a <Values> element and yield one event per atomic value.
+
+    Handles the three child forms STEP exports use:
+      <Value AttributeID="X">…</Value>                              — single value
+      <ValueGroup AttributeID="X"> <Value …>…</Value>* </ValueGroup> — per-locale set
+      <MultiValue AttributeID="X"> … </MultiValue>                  — multi-valued attr
+
+    The previous implementation only matched direct <Value> children of <Values>,
+    silently dropping every value nested inside a <ValueGroup> or <MultiValue>.
+    """
+    for child in values_root:
+        local = etree.QName(child.tag).localname
+        if local == "Value":
+            yield _value_event(child, product_id, "ATTRIBUTE_VALUE")
+        elif local == "ValueGroup":
+            attr_id = child.get("AttributeID")
+            group_lov = child.get("ID")  # e.g. ValueGroup ID="3-4 years" for LOV-typed attr
+            group_changed = child.get("Changed") == "true"
+            inner = child.findall("{*}Value")
+            if not inner:
+                # An empty <ValueGroup AttributeID="X"/> is a placeholder — emit a
+                # single empty event so the diff engine can detect a clear/null.
+                yield {
+                    "change_element_type": "ATTRIBUTE_VALUE",
+                    "step_product_id": product_id,
+                    "attribute_id": attr_id,
+                    "qualifier_id": None,
+                    "unit_id": None,
+                    "lov_id": group_lov,
+                    "current_value": "",
+                    "changed_hint": group_changed,
+                    "inherited": None,
+                    "derived": False,
+                }
+                continue
+            for v in inner:
+                ev = _value_event(v, product_id, "ATTRIBUTE_VALUE",
+                                  attribute_id=attr_id, group_lov_id=group_lov)
+                if group_changed and not ev["changed_hint"]:
+                    ev["changed_hint"] = True
+                yield ev
+        elif local == "MultiValue":
+            members = _collect_multi_members(child)
+            yield {
+                "change_element_type": "MULTIVALUE_CHANGED",
+                "step_product_id": product_id,
+                "attribute_id": child.get("AttributeID"),
+                # MultiValue itself has no qualifier; per-value qualifiers
+                # are preserved in current_members.
+                "qualifier_id": None,
+                "current_values": [m["value"] for m in members],
+                "current_members": members,
+                "changed_hint": child.get("Changed") == "true",
+            }
 
 
 # ── Convenience helpers ─────────────────────────────────────────────
