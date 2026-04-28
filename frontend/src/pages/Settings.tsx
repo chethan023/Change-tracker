@@ -19,6 +19,7 @@ import {
 import { useTheme } from "../lib/theme";
 import { useAuth } from "../lib/auth";
 import { toast } from "../ui/toast";
+import { confirmDialog } from "../ui/confirm";
 import type { ClientConfig } from "../lib/types";
 
 const REDUCE_MOTION_KEY = "ct_reduce_motion";
@@ -301,13 +302,16 @@ function IngestCredentialsBlock() {
     }
   };
 
-  const onRotate = () => {
-    if (window.confirm(
-      "Rotate the ingest API key? The current key will stop working immediately, "
-      + "and STEP OIEP must be reconfigured with the new key before the next payload."
-    )) {
-      rotate.mutate();
-    }
+  const onRotate = async () => {
+    const ok = await confirmDialog({
+      title: "Rotate the ingest API key?",
+      body:
+        "The current key will stop working immediately, and STEP OIEP must be "
+        + "reconfigured with the new key before the next payload.",
+      confirmLabel: "Rotate key",
+      tone: "warning",
+    });
+    if (ok) rotate.mutate();
   };
 
   if (isLoading) return <SkeletonRows count={3} />;
@@ -708,14 +712,18 @@ function RetentionPanel() {
               type="button"
               className="btn btn-secondary btn-sm"
               disabled={run.isPending || (!recordsDays && !payloadDays)}
-              onClick={() => {
+              onClick={async () => {
                 const summary = [
                   recordsDays && `delete change records older than ${recordsDays} days`,
                   payloadDays && `clear STEPXML payloads older than ${payloadDays} days`,
                 ].filter(Boolean).join(" and ");
-                if (window.confirm(`Run cleanup now? This will ${summary}.`)) {
-                  run.mutate();
-                }
+                const ok = await confirmDialog({
+                  title: "Run cleanup now?",
+                  body: `This will ${summary}.`,
+                  confirmLabel: "Run cleanup",
+                  danger: true,
+                });
+                if (ok) run.mutate();
               }}
             >
               {run.isPending ? "Running…" : <><Icon name="trash-2" size={13} /> Run cleanup now</>}

@@ -17,6 +17,7 @@ import {
   Masthead, Icon, Avatar, StatCard, IconButton,
 } from "../ui/primitives";
 import { toast } from "../ui/toast";
+import { confirmDialog } from "../ui/confirm";
 
 const ROLES: UserRole[] = ["admin", "editor", "viewer"];
 
@@ -179,10 +180,14 @@ export default function Users() {
                   onToggleActive={() =>
                     toggleActive.mutate({ id: u.id, active: !u.active })
                   }
-                  onDelete={() => {
-                    if (window.confirm(`Delete ${u.email}? This cannot be undone.`)) {
-                      remove.mutate(u.id);
-                    }
+                  onDelete={async () => {
+                    const ok = await confirmDialog({
+                      title: `Delete ${u.email}?`,
+                      body: "This cannot be undone. The user will lose access immediately.",
+                      confirmLabel: "Delete user",
+                      danger: true,
+                    });
+                    if (ok) remove.mutate(u.id);
                   }}
                 />
               ))}

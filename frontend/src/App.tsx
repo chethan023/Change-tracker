@@ -9,6 +9,7 @@ import { TopNav, Sidebar } from "./ui/Chrome";
 import DiffViewer from "./ui/DiffViewer";
 import CommandPalette from "./ui/CommandPalette";
 import { ToastLayer } from "./ui/toast";
+import { ConfirmLayer } from "./ui/confirm";
 import Login from "./pages/Login";
 import type { ClientConfig } from "./lib/types";
 
@@ -136,6 +137,7 @@ function AppShell({ config }: { config?: ClientConfig }) {
       <DiffViewer />
       <CommandPalette />
       <ToastLayer />
+      <ConfirmLayer />
     </div>
   );
 }
